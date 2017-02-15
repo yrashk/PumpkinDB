@@ -428,7 +428,7 @@ pub mod timestamp_hlc;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```norun
 /// let mut vm = VM::new(&env, &db); // lmdb comes from outside
 ///
 /// let sender = vm.sender();
@@ -1708,8 +1708,13 @@ mod tests {
 
         }, {
             assert!(!result.is_err());
-            assert_eq!(receiver1.recv_timeout(Duration::from_secs(1)).unwrap(), (Vec::from("Topic"), Vec::from("Hello")));
-            assert_eq!(receiver2.recv_timeout(Duration::from_secs(1)).unwrap(), (Vec::from("Topic"), Vec::from("Hello")));
+
+            let result = receiver1.recv_timeout(Duration::from_secs(1)).unwrap();
+            result.2.send(());
+            assert_eq!((result.0, result.1), (Vec::from("Topic"), Vec::from("Hello")));
+            let result = receiver2.recv_timeout(Duration::from_secs(1)).unwrap();
+            result.2.send(());
+            assert_eq!((result.0, result.1), (Vec::from("Topic"), Vec::from("Hello")));
         });
 
         eval!("\"Hello\" \"Topic1\" SEND", env, result, publisher_accessor, {
