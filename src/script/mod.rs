@@ -873,9 +873,6 @@ impl<'a> VM<'a> {
         let then = stack_pop!(env);
         let cond = stack_pop!(env);
 
-        assert_decodable!(env, else_);
-        assert_decodable!(env, then);
-
         if cond == STACK_TRUE {
             env.program.push(then);
             Ok(())
@@ -982,7 +979,6 @@ impl<'a> VM<'a> {
         word_is!(env, word, EVAL_SCOPED);
         env.push_dictionary();
         let a = stack_pop!(env);
-        assert_decodable!(env, a);
         env.program.push(SCOPE_END);
         env.program.push(a);
         Ok(())
@@ -1054,7 +1050,6 @@ impl<'a> VM<'a> {
     fn handle_eval(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         word_is!(env, word, EVAL);
         let a = stack_pop!(env);
-        assert_decodable!(env, a);
         env.program.push(a);
         Ok(())
     }
@@ -1075,7 +1070,6 @@ impl<'a> VM<'a> {
     fn handle_try(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         word_is!(env, word, TRY);
         let v = stack_pop!(env);
-        assert_decodable!(env, v);
         env.tracking_errors += 1;
         env.program.push(TRY_END);
         env.program.push(v);
@@ -1121,7 +1115,6 @@ impl<'a> VM<'a> {
     fn handle_dowhile(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         word_is!(env, word, DOWHILE);
         let v = stack_pop!(env);
-        assert_decodable!(env, v);
 
         let mut vec = Vec::new();
 
@@ -1154,7 +1147,6 @@ impl<'a> VM<'a> {
         let count = stack_pop!(env);
 
         let v = stack_pop!(env);
-        assert_decodable!(env, v);
 
         let counter = BigUint::from_bytes_be(count);
         if counter.is_zero() {
@@ -1213,7 +1205,6 @@ impl<'a> VM<'a> {
         word_is!(env, word, DEF);
         let word = stack_pop!(env);
         let value = stack_pop!(env);
-        assert_decodable!(env, value);
         match binparser::word(word) {
             nom::IResult::Done(_, _) => {
                 #[cfg(feature = "scoped_dictionary")]
@@ -1425,7 +1416,8 @@ mod tests {
         });
 
         eval!("1 TRY", env, result, {
-            assert_error!(result, "[\"Decoding error\" [] 5]");
+            assert_eq!(Vec::from(env.pop().unwrap()), parsed_data!("[\"Decoding error\" [] 5]"));
+            assert_eq!(env.pop(), None);
         });
 
     }
