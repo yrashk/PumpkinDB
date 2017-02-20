@@ -39,7 +39,7 @@ impl<'a> Handler<'a> {
             let slice = alloc_slice!(16, env);
             let _ = now.write_bytes(&mut slice[0..]).unwrap();
             env.push(slice);
-            Ok((env, None))
+            Ok(env)
         } else {
             Err((env, Error::UnknownWord))
         }
@@ -78,7 +78,7 @@ impl<'a> Handler<'a> {
                 env.push(STACK_FALSE);
             }
 
-            Ok((env, None))
+            Ok(env)
         } else {
             Err((env, Error::UnknownWord))
         }
@@ -117,7 +117,7 @@ impl<'a> Handler<'a> {
                 env.push(STACK_FALSE);
             }
 
-            Ok((env, None))
+            Ok(env)
         } else {
             Err((env, Error::UnknownWord))
         }
@@ -147,7 +147,7 @@ impl<'a> Handler<'a> {
             let _ = t1.write_bytes(&mut slice[0..]).unwrap();
             env.push(slice);
 
-            Ok((env, None))
+            Ok(env)
         } else {
             Err((env, Error::UnknownWord))
         }
@@ -177,7 +177,7 @@ impl<'a> Handler<'a> {
 
             env.push(slice);
 
-            Ok((env, None))
+            Ok(env)
         } else {
             Err((env, Error::UnknownWord))
         }
