@@ -33,26 +33,26 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_hlc(&mut self, mut env: Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
+    pub fn handle_hlc(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         if word == HLC {
             let now = timestamp::hlc();
             let slice = alloc_slice!(16, env);
             let _ = now.write_bytes(&mut slice[0..]).unwrap();
             env.push(slice);
-            Ok(env)
+            Ok(())
         } else {
-            Err((env, Error::UnknownWord))
+            Err(Error::UnknownWord)
         }
     }
 
     #[inline]
-    pub fn handle_hlc_ltp(&mut self, mut env: Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
+    pub fn handle_hlc_ltp(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         if word == HLC_LTP {
             let a = env.pop();
             let b = env.pop();
 
             if a.is_none() || b.is_none() {
-                return Err((env, error_empty_stack!()));
+                return Err(error_empty_stack!());
             }
 
             let mut a1 = a.unwrap();
@@ -62,11 +62,11 @@ impl<'a> Handler<'a> {
             let t2_ = hlc::Timestamp::<hlc::WallT>::read_bytes(&mut a1);
 
             if t1_.is_err() {
-                return Err((env, error_invalid_value!(b1)))
+                return Err(error_invalid_value!(b1))
             }
 
             if t2_.is_err() {
-                return Err((env, error_invalid_value!(a1)))
+                return Err(error_invalid_value!(a1))
             }
 
             let t1 = t1_.unwrap();
@@ -78,20 +78,20 @@ impl<'a> Handler<'a> {
                 env.push(STACK_FALSE);
             }
 
-            Ok(env)
+            Ok(())
         } else {
-            Err((env, Error::UnknownWord))
+            Err(Error::UnknownWord)
         }
     }
 
     #[inline]
-    pub fn handle_hlc_gtp(&mut self, mut env: Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
+    pub fn handle_hlc_gtp(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         if word == HLC_GTP {
             let a = env.pop();
             let b = env.pop();
 
             if a.is_none() || b.is_none() {
-                return Err((env, error_empty_stack!()));
+                return Err(error_empty_stack!());
             }
 
             let mut a1 = a.unwrap();
@@ -101,11 +101,11 @@ impl<'a> Handler<'a> {
             let t2_ = hlc::Timestamp::<hlc::WallT>::read_bytes(&mut a1);
 
             if t1_.is_err() {
-                return Err((env, error_invalid_value!(b1)))
+                return Err(error_invalid_value!(b1))
             }
 
             if t2_.is_err() {
-                return Err((env, error_invalid_value!(a1)))
+                return Err(error_invalid_value!(a1))
             }
 
             let t1 = t1_.unwrap();
@@ -117,19 +117,19 @@ impl<'a> Handler<'a> {
                 env.push(STACK_FALSE);
             }
 
-            Ok(env)
+            Ok(())
         } else {
-            Err((env, Error::UnknownWord))
+            Err(Error::UnknownWord)
         }
     }
 
     #[inline]
-    pub fn handle_hlc_tick(&mut self, mut env: Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
+    pub fn handle_hlc_tick(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         if word == HLC_TICK {
             let a = env.pop();
 
             if a.is_none() {
-                return Err((env, error_empty_stack!()));
+                return Err(error_empty_stack!());
             }
 
             let mut a1 = a.unwrap();
@@ -137,7 +137,7 @@ impl<'a> Handler<'a> {
             let t1_ = hlc::Timestamp::<hlc::WallT>::read_bytes(&mut a1);
 
             if t1_.is_err() {
-                return Err((env, error_invalid_value!(a1)))
+                return Err(error_invalid_value!(a1))
             }
 
             let mut t1 = t1_.unwrap();
@@ -147,19 +147,19 @@ impl<'a> Handler<'a> {
             let _ = t1.write_bytes(&mut slice[0..]).unwrap();
             env.push(slice);
 
-            Ok(env)
+            Ok(())
         } else {
-            Err((env, Error::UnknownWord))
+            Err(Error::UnknownWord)
         }
     }
 
     #[inline]
-    pub fn handle_hlc_lc(&mut self, mut env: Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
+    pub fn handle_hlc_lc(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         if word == HLC_LC {
             let a = env.pop();
 
             if a.is_none() {
-                return Err((env, error_empty_stack!()));
+                return Err(error_empty_stack!());
             }
 
             let mut a1 = a.unwrap();
@@ -167,7 +167,7 @@ impl<'a> Handler<'a> {
             let t1_ = hlc::Timestamp::<hlc::WallT>::read_bytes(&mut a1);
 
             if t1_.is_err() {
-                return Err((env, error_invalid_value!(a1)))
+                return Err(error_invalid_value!(a1))
             }
 
             let t1 = t1_.unwrap();
@@ -177,9 +177,9 @@ impl<'a> Handler<'a> {
 
             env.push(slice);
 
-            Ok(env)
+            Ok(())
         } else {
-            Err((env, Error::UnknownWord))
+            Err(Error::UnknownWord)
         }
     }
 
