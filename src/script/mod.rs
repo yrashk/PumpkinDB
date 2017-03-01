@@ -62,6 +62,7 @@
 use std::collections::BTreeMap;
 
 pub mod envheap;
+pub mod multibin;
 
 use self::envheap::EnvHeap;
 
@@ -129,19 +130,21 @@ pub const STACK_SIZE: usize = 32_768;
 /// Initial heap size
 pub const HEAP_SIZE: usize = 32_768;
 
+use self::multibin::Multibin;
+
 /// Env is a representation of a stack and the heap.
 ///
 /// Doesn't need to be used directly as it's primarily
 /// used by [`Scheduler`](struct.Scheduler.html)
 pub struct Env<'a> {
-    pub program: Vec<&'a [u8]>,
-    stack: Vec<&'a [u8]>,
+    pub program: Vec<Multibin<'a>>,
+    stack: Vec<Multibin<'a>>,
     stack_size: usize,
     heap: EnvHeap,
     #[cfg(feature = "scoped_dictionary")]
-    dictionary: Vec<BTreeMap<&'a [u8], &'a [u8]>>,
+    dictionary: Vec<BTreeMap<Multibin<'a>, Multibin<'a>>>,
     #[cfg(not(feature = "scoped_dictionary"))]
-    dictionary: BTreeMap<&'a [u8], &'a [u8]>,
+    dictionary: BTreeMap<Multibin<'a>, Multibin<'a>>,
     // current TRY status
     tracking_errors: usize,
     aborting_try: Vec<Error>,
@@ -156,8 +159,6 @@ impl<'a> std::fmt::Debug for Env<'a> {
 
 unsafe impl<'a> Send for Env<'a> {}
 
-const _EMPTY: &'static [u8] = b"";
-
 use std::mem;
 
 impl<'a> Env<'a> {
@@ -168,7 +169,7 @@ impl<'a> Env<'a> {
 
     /// Creates an environment with an empty stack of specific size
     pub fn new_with_stack_size(size: usize) -> Result<Self, Error> {
-        Env::new_with_stack(vec![_EMPTY; size], 0)
+        Env::new_with_stack(vec![Multibin::empty(); size], 0)
     }
 
     /// Creates an environment with an existing stack and a pointer to the
@@ -176,7 +177,7 @@ impl<'a> Env<'a> {
     ///
     /// This function is useful for working with result stacks received from
     /// [Scheduler](struct.Scheduler.html)
-    pub fn new_with_stack(stack: Vec<&'a [u8]>, stack_size: usize) -> Result<Self, Error> {
+    pub fn new_with_stack(stack: Vec<Multibin<'a>>, stack_size: usize) -> Result<Self, Error> {
         #[cfg(feature = "scoped_dictionary")]
         let dictionary = vec![BTreeMap::new()];
         #[cfg(not(feature = "scoped_dictionary"))]
@@ -195,19 +196,19 @@ impl<'a> Env<'a> {
 
     /// Returns the entire stack
     #[inline]
-    pub fn stack(&self) -> &[&'a [u8]] {
+    pub fn stack(&self) -> &[Multibin<'a>] {
         &self.stack.as_slice()[0..self.stack_size as usize]
     }
 
     /// Returns a copy of the entire stack
     #[inline]
     pub fn stack_copy(&self) -> Vec<Vec<u8>> {
-        self.stack.clone().into_iter().map(|v| Vec::from(v)).collect()
+        self.stack.clone().into_iter().map(|v| (&v).into()).collect()
     }
 
     /// Returns top of the stack without removing it
     #[inline]
-    pub fn stack_top(&self) -> Option<&'a [u8]> {
+    pub fn stack_top(&self) -> Option<Multibin<'a>> {
         if self.stack_size == 0 {
             None
         } else {
@@ -217,12 +218,12 @@ impl<'a> Env<'a> {
 
     /// Removes the top of the stack and returns it
     #[inline]
-    pub fn pop(&mut self) -> Option<&'a [u8]> {
+    pub fn pop(&mut self) -> Option<Multibin<'a>> {
         if self.stack_size == 0 {
             None
         } else {
             let val = Some(self.stack.as_slice()[self.stack_size as usize - 1]);
-            self.stack.as_mut_slice()[self.stack_size as usize - 1] = _EMPTY;
+            self.stack.as_mut_slice()[self.stack_size as usize - 1] = Multibin::empty();
             self.stack_size -= 1;
             val
         }
@@ -230,10 +231,10 @@ impl<'a> Env<'a> {
 
     /// Pushes value on top of the stack
     #[inline]
-    pub fn push(&mut self, data: &'a [u8]) {
+    pub fn push(&mut self, data:Multibin<'a>) {
         // check if we are at capacity
         if self.stack_size == self.stack.len() {
-            let mut vec = vec![_EMPTY; STACK_SIZE];
+            let mut vec = vec![Multibin::empty(); STACK_SIZE];
             self.stack.append(&mut vec);
         }
         self.stack.as_mut_slice()[self.stack_size] = data;
@@ -555,7 +556,7 @@ impl<'a> Scheduler<'a> {
                             match env.alloc(program.len()) {
                                 Ok(slice) => {
                                     slice.copy_from_slice(program.as_slice());
-                                    env.program.push(slice);
+                                    env.program.push(Multibin::Binary(slice));
                                     for_each_module!(module, self, module.init(&mut env, pid));
                                     envs.push_back((pid, env, chan));
                                 }
@@ -609,12 +610,12 @@ impl<'a> Scheduler<'a> {
                 env.push(&data[offset_by_size(data.len())..]);
             }
             if rest.len() > 0 {
-                env.program.push(rest);
+                env.program.push(Multibin::Binary(rest));
             }
             Ok(())
         } else if let nom::IResult::Done(rest, word) = binparser::word_or_internal_word(program) {
             if rest.len() > 0 {
-                env.program.push(rest);
+                env.program.push(Multibin::Binary(rest));
             }
             if word != TRY_END && !env.aborting_try.is_empty() {
                 return Ok(())
@@ -654,10 +655,11 @@ impl<'a> Scheduler<'a> {
     #[cfg(feature = "scoped_dictionary")]
     fn handle_dictionary(&mut self, env: &mut Env<'a>, word: &'a [u8], _: EnvId) -> PassResult<'a> {
         let dict = env.dictionary.pop().unwrap();
-        if dict.contains_key(word) {
+        let mbword = Multibin::Binary(word);
+        if dict.contains_key(&mbword) {
             {
-                let def = dict.get(word).unwrap();
-                env.program.push(def);
+                let def = dict.get(&mbword).unwrap();
+                env.program.push(def.clone());
             }
             env.dictionary.push(dict);
             Ok(())
@@ -672,7 +674,7 @@ impl<'a> Scheduler<'a> {
         word_is!(env, word, TRY);
         let v = stack_pop!(env);
         env.tracking_errors += 1;
-        env.program.push(TRY_END);
+        env.program.push(Multibin::Binary(TRY_END));
         env.program.push(v);
         Ok(())
     }
@@ -682,7 +684,7 @@ impl<'a> Scheduler<'a> {
         word_is!(env, word, TRY_END);
         env.tracking_errors -= 1;
         if env.aborting_try.is_empty() {
-            env.push(_EMPTY);
+            env.push(Multibin::empty());
             Ok(())
         } else if let Some(Error::ProgramError(err)) = env.aborting_try.pop() {
             for_each_module!(module, self, module.done(env, pid));
@@ -690,7 +692,7 @@ impl<'a> Scheduler<'a> {
             env.push(slice);
             Ok(())
         } else {
-            env.push(_EMPTY);
+            env.push(Multibin::empty());
             Ok(())
         }
     }
@@ -703,6 +705,7 @@ pub mod compose;
 mod tests {
 
     use script::{Env, Scheduler, Error, RequestMessage, ResponseMessage, EnvId, parse, offset_by_size};
+    use script::multibin::Multibin;
     use std::sync::mpsc;
     use std::sync::Arc;
     use timestamp;
@@ -713,8 +716,6 @@ mod tests {
     use super::binparser;
     use pubsub;
     use storage;
-
-    const _EMPTY: &'static [u8] = b"";
 
     #[test]
     fn error_macro() {
@@ -730,7 +731,7 @@ mod tests {
         let mut env = Env::new().unwrap();
         let target = env.stack.len() * 100;
         for i in 1..target {
-            env.push(_EMPTY);
+            env.push(Multibin::empty());
         }
         assert!(env.stack.len() >= target);
     }
