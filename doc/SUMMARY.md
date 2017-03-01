@@ -2,6 +2,11 @@
 
 
 * [Introduction](README.md)
+* Getting Started
+ * [Installation](getting_started/INSTALL.md)
+ * [Accessing PumpkinDB](getting_started/TERM.md)
+ * [Storing and retrieving data](getting_started/STORAGE.md)
+ * [Cursors](getting_started/CURSORS.md)
 * [PumpkinScript](script/README.md)
  * Stack manipulation
    * [-ROT](script/-ROT.md)
