@@ -11,7 +11,8 @@ use std::marker::PhantomData;
 
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 
-use num_bigint::{BigUint, BigInt, Sign};
+use num_bigint::{BigUint, BigInt, Sign, ToBigInt};
+use bigdecimal::BigDecimal;
 use num_traits::Signed;
 use core::ops::{Add, Sub};
 
@@ -41,6 +42,10 @@ instruction!(UINT64_SUB, (a, b => c), b"\x8aUINT64/SUB");
 instruction!(INT64_ADD, (a, b => c), b"\x89INT64/ADD");
 instruction!(INT64_SUB, (a, b => c), b"\x89INT64/SUB");
 
+instruction!(UBIGDECIMAL_ADD, (a, b => c), b"\x8fUBIGDECIMAL/ADD");
+instruction!(UBIGDECIMAL_SUB, (a, b => c), b"\x8fUBIGDECIMAL/SUB");
+instruction!(BIGDECIMAL_ADD, (a, b => c), b"\x8eBIGDECIMAL/ADD");
+instruction!(BIGDECIMAL_SUB, (a, b => c), b"\x8eBIGDECIMAL/SUB");
 // Casting
 instruction!(INT_TO_UINT, (a => b), b"\x89INT->UINT");
 instruction!(UINT_TO_INT, (a => b), b"\x89UINT->INT");
@@ -321,6 +326,10 @@ impl<'a> Dispatcher<'a> for Handler<'a> {
         try_instruction!(env, self.handle_uint64_sub(env, instruction, pid));
         try_instruction!(env, self.handle_int64_add(env, instruction, pid));
         try_instruction!(env, self.handle_int64_sub(env, instruction, pid));
+        try_instruction!(env, self.handle_ubigdecimal_add(env, instruction, pid));
+//        try_instruction!(env, self.handle_ubigdecimal_sub(env, instruction, pid));
+//        try_instruction!(env, self.handle_bigdecimal_add(env, instruction, pid));
+//        try_instruction!(env, self.handle_bigdecimal_sub(env, instruction, pid));
         Err(Error::UnknownInstruction)
     }
 }
@@ -737,4 +746,34 @@ impl<'a> Handler<'a> {
         instruction_is!(instruction, INT64_SUB);
         sized_int_op!(env, read_i64, checked_sub, write_i64)
     }
+
+    #[inline]
+    fn handle_ubigdecimal_add(&mut self,
+                       env: &mut Env<'a>,
+                       instruction: &'a [u8],
+                       _: EnvId)
+                       -> PassResult<'a> {
+        instruction_is!(instruction, UBIGDECIMAL_ADD);
+        let a = stack_pop!(env);
+        let b = stack_pop!(env);
+
+        let a_int = BigUint::from_bytes_be(&a[4..]).to_bigint().unwrap();
+        let b_int = BigUint::from_bytes_be(&b[4..]).to_bigint().unwrap();
+
+        let a_bigdecimal = BigDecimal::new(a_int, (::std::u32::MAX - (&a[0..4]).read_u32::<BigEndian>().unwrap()) as i64);
+        let b_bigdecimal = BigDecimal::new(b_int, (::std::u32::MAX - (&b[0..4]).read_u32::<BigEndian>().unwrap()) as i64);
+
+        let c_bigdecimal = a_bigdecimal.add(b_bigdecimal);
+
+        let (bigint, exp) = c_bigdecimal.into_bigint_and_exponent();
+        let (_, mut c_bytes) = bigint.to_bytes_be();
+        let mut vec = vec![];
+        let _ = vec.write_u32::<BigEndian>(::std::u32::MAX - exp as u32).unwrap();
+        vec.append(&mut c_bytes);
+
+        let slice = alloc_and_write!(&vec, env);
+        env.push(slice);
+        Ok(())
+    }
+
 }

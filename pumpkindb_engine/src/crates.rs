@@ -15,6 +15,7 @@ extern crate test;
 extern crate core;
 
 extern crate num_bigint;
+extern crate bigdecimal;
 extern crate num_iter;
 extern crate num_traits;
 extern crate snowflake;

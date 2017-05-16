@@ -14,9 +14,10 @@ snowflake = { git = "https://github.com/yrashk/snowflake.git", branch="pub-field
 lmdb-zero = "0.4.0"
 config = "0.3.1"
 lazy_static = "0.2.2"
-num-bigint = "0.1.35"
-num-iter = "0.1.32"
-num-traits = "0.1.36"
+num-bigint = "0.1.37"
+bigdecimal = { git = "https://github.com/akubera/bigdecimal-rs", rev = "1ea2764" }
+num-iter = "0.1.33"
+num-traits = "0.1.37"
 libc = "0.2.20"
 hybrid-clocks = "0.3.3"
 byteorder = "1.0.0"

@@ -358,6 +358,44 @@ named!(int_sized<Vec<u8>>,
                   u64int | int64 | int64p ) >>
         (sized_vec(int))));
 
+named!(ubigdecimal<Vec<u8>>,
+    do_parse!(
+        left: take_while1!(is_digit)   >>
+        char!('.')                     >>
+        right: take_while1!(is_digit)  >>
+        delim_or_end                   >>
+        ({
+           let scale = ::std::u32::MAX - right.len() as u32;
+           let mut v = Vec::from(left);
+           v.extend_from_slice(right);
+           let unscaled = BigUint::from_str(str::from_utf8(&v).unwrap()).unwrap();
+           let mut vec = vec![];
+           let _ = vec.write_u32::<BigEndian>(scale).unwrap();
+           vec.append(&mut unscaled.to_bytes_be());
+           (sized_vec(vec))
+        })));
+
+named!(bigdecimal<Vec<u8>>,
+    do_parse!(
+        sign: sign                     >>
+        left: take_while1!(is_digit)   >>
+        char!('.')                     >>
+        right: take_while1!(is_digit)  >>
+        delim_or_end                   >>
+        ({
+           let scale = ::std::u32::MAX - right.len() as u32;
+           let mut v = Vec::from(left);
+           v.extend_from_slice(right);
+           let unscaled = BigUint::from_str(str::from_utf8(&v).unwrap()).unwrap();
+           let mut vec = if sign == Sign::Minus && !unscaled.is_zero() {
+                vec![0x00]
+           } else {
+                vec![0x01]
+           };
+           let _ = vec.write_u32::<BigEndian>(scale).unwrap();
+           vec.append(&mut unscaled.to_bytes_be());
+           (sized_vec(vec))
+        })));
 
 named!(instruction<Vec<u8>>, do_parse!(
                         instruction: take_while1!(is_instruction_char)  >>
@@ -376,7 +414,10 @@ named!(string<Vec<u8>>,  alt!(do_parse!(tag!(b"\"\"") >> (vec![0])) |
                               (string_to_vec(str)))));
 named!(comment<Vec<u8>>, do_parse!(delimited!(char!('('), opt!(is_not!(")")), char!(')')) >>
                                (vec![])));
-named!(item<Vec<u8>>, alt!(comment | binary | string | uint | sint | int_sized |
+named!(item<Vec<u8>>, alt!(comment |
+                           binary | string |
+                           uint | sint | int_sized |
+                           ubigdecimal | bigdecimal |
                            wrap | instructionref | instruction));
 
 fn unwrap_instruction(mut instruction: Vec<u8>) -> Vec<u8> {
@@ -673,6 +714,45 @@ mod tests {
 
         assert_eq!(script, vec);
     }
+
+    #[test]
+    fn test_ubigdecimal() {
+        let script = parse("1.1").unwrap();
+        let mut bytes = BigUint::from_str("11").unwrap().to_bytes_be();
+        let mut sized = Vec::new();
+        sized.push(5);
+        sized.append(&mut vec![0xff, 0xff, 0xff, 0xfe]);
+        sized.append(&mut bytes);
+        assert_eq!(script, sized);
+    }
+
+    #[test]
+    fn test_bigdecimal() {
+        let script = parse("-1.1").unwrap();
+        let mut bytes = BigUint::from_str("11").unwrap().to_bytes_be();
+        let mut sized = Vec::new();
+        sized.push(6);
+        sized.append(&mut vec![0x00, 0xff, 0xff, 0xff, 0xfe]);
+        sized.append(&mut bytes);
+        assert_eq!(script, sized);
+
+        let script = parse("+0.0").unwrap();
+        let mut bytes = BigUint::from_str("0").unwrap().to_bytes_be();
+        let mut sized = Vec::new();
+        sized.push(6);
+        sized.append(&mut vec![0x01, 0xff, 0xff, 0xff, 0xfe]);
+        sized.append(&mut bytes);
+        assert_eq!(script, sized);
+
+        let script = parse("+1.1").unwrap();
+        let mut bytes = BigUint::from_str("11").unwrap().to_bytes_be();
+        let mut sized = Vec::new();
+        sized.push(6);
+        sized.append(&mut vec![0x01, 0xff, 0xff, 0xff, 0xfe]);
+        sized.append(&mut bytes);
+        assert_eq!(script, sized);
+    }
+
 
     #[test]
     fn test_uint_at_the_end_of_code() {
