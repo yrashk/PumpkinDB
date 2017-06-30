@@ -10,9 +10,9 @@
 //! capabilities
 //!
 
-use lmdb;
-use lmdb::traits::{LmdbResultExt, AsLmdbBytes, FromLmdbBytes};
-use storage;
+use allocator::Allocator;
+use kv;
+use kv::{KeyValueStore, WriteTransaction, ReadTransaction};
 use std::mem;
 use std::error::Error as StdError;
 use std::collections::HashMap;
@@ -21,7 +21,6 @@ use super::{Env, EnvId, Dispatcher, PassResult, Error, STACK_TRUE, STACK_FALSE, 
             ERROR_UNKNOWN_KEY, ERROR_DATABASE, ERROR_NO_VALUE};
 use snowflake::ProcessUniqueId;
 use std::collections::BTreeMap;
-use storage::WriteTransactionContainer;
 use num_bigint::BigUint;
 use num_traits::FromPrimitive;
 
@@ -58,46 +57,19 @@ enum TxType {
     Write,
 }
 
-enum Accessor<'a> {
-    Const(lmdb::ConstAccessor<'a>),
-    Write(lmdb::WriteAccessor<'a>),
-}
-
-impl<'a> Accessor<'a> {
-    fn get<K: AsLmdbBytes + ?Sized, V: FromLmdbBytes + ?Sized>(&self, db: &lmdb::Database, key: &K)
-        -> Result<Option<&V>, lmdb::Error> {
-        match self {
-            &Accessor::Write(ref access) => {
-                access.get::<K, V>(db, key)
-            },
-            &Accessor::Const(ref access) => {
-                access.get::<K, V>(db, key)
-            }
-        }.to_opt()
-    }
-}
-
 type TxnId<'a> = &'a [u8];
 
 #[derive(Debug)]
-enum Txn<'a> {
-    Read(lmdb::ReadTransaction<'a>, TxnId<'a>),
-    Write(WriteTransactionContainer<'a>, TxnId<'a>),
+enum Txn<'a, CR : kv::Cursor<'a>, CW : kv::Cursor<'a>,
+             R : kv::ReadTransaction<'a, Cursor = CR>,
+             W : kv::WriteTransaction<'a, Cursor = CW>> {
+    Read(R, TxnId<'a>),
+    Write(W, TxnId<'a>),
 }
 
-impl<'a> Txn<'a> {
-    fn access(&self) -> Accessor {
-        match self {
-            &Txn::Read(ref txn, _) => Accessor::Const(txn.access()),
-            &Txn::Write(ref txn, _) => Accessor::Write(txn.access()),
-        }
-    }
-    fn cursor(&self, db: &'a lmdb::Database) -> Result<lmdb::Cursor, lmdb::Error> {
-        match self {
-            &Txn::Read(ref txn, _) => txn.cursor(db),
-            &Txn::Write(ref txn, _) => txn.cursor(db),
-        }
-    }
+impl<'a, CR : kv::Cursor<'a>, CW : kv::Cursor<'a>,
+    R : kv::ReadTransaction<'a, Cursor = CR>,
+    W : kv::WriteTransaction<'a, Cursor = CW>> Txn<'a, CR, CW, R, W> {
     fn tx_type(&self) -> TxType {
         match self {
             &Txn::Read(_, _) => TxType::Read,
@@ -116,14 +88,23 @@ use std::sync::Arc;
 use super::super::timestamp;
 use super::super::nvmem::NonVolatileMemory;
 
-pub struct Handler<'a, T, N>
-    where T : AsRef<storage::Storage<'a>> + 'a,
+use std::marker::PhantomData;
+
+pub struct Handler<'a, KV, T, N, E, CR, CW, R, W>
+    where R : kv::ReadTransaction<'a, Cursor = CR> + 'a,
+          W : kv::WriteTransaction<'a, Cursor = CW> + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<'a, Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a,
+          CR : kv::Cursor<'a>, CW : kv::Cursor<'a>,
           N : NonVolatileMemory {
-    db: T,
-    txns: HashMap<EnvId, Vec<Txn<'a>>>,
-    cursors: BTreeMap<(EnvId, Vec<u8>), (TxType, lmdb::Cursor<'a, 'a>)>,
+    kv: T,
+    txns: HashMap<EnvId, Vec<Txn<'a, CR, CW, R, W>>>,
+    read_cursors: BTreeMap<(EnvId, Vec<u8>), (TxType, CR)>,
+    write_cursors: BTreeMap<(EnvId, Vec<u8>), (TxType, CW)>,
     maxkeysize: Vec<u8>,
     timestamp: Arc<timestamp::Timestamp<N>>,
+    phantom: PhantomData<(E, R, W, KV)>,
 }
 
 macro_rules! read_or_write_transaction {
@@ -148,22 +129,50 @@ macro_rules! tx_type {
     }};
 }
 
-macro_rules! cursor_op {
+macro_rules! for_either_txn_type {
+    ($txn: expr, $ident: ident, $body: expr) => {{
+        match $txn {
+           &Txn::Write(ref $ident, _) => $body,
+           &Txn::Read(ref $ident, _) => $body,
+        }
+    }};
+}
+
+macro_rules! for_either_cursor_type {
+    ($cur: expr, $me: expr, $txn: expr, $env_id: expr, $cursor: ident, $body: expr) => {{
+        let tuple = ($env_id, $cur);
+        if $txn.tx_type() == TxType::Read {
+            let mut $cursor = match $me.read_cursors.remove(&tuple) {
+                Some((_, cursor)) => cursor,
+                None => return Err(error_invalid_value!($cur))
+            };
+            let result = $body;
+            $me.read_cursors.insert(tuple, (tx_type!($me, &$env_id), $cursor));
+            result
+        } else {
+            let mut $cursor = match $me.write_cursors.remove(&tuple) {
+                Some((_, cursor)) => cursor,
+                None => return Err(error_invalid_value!($cur))
+            };
+            let result = $body;
+            $me.write_cursors.insert(tuple, (tx_type!($me, &$env_id), $cursor));
+            result
+        }
+    }};
+}
+
+macro_rules! cursor_val_op {
     ($me: expr, $env: expr, $env_id: expr, $op: ident, ($($arg: expr),*)) => {{
         let txn = read_or_write_transaction!($me, &$env_id);
         let c = stack_pop!($env);
+        for_either_cursor_type!(Vec::from(c), $me, txn, $env_id, cursor, cursor.$op($($arg)*))
+    }};
+}
 
-        let tuple = ($env_id, Vec::from(c));
-        let mut cursor = match $me.cursors.remove(&tuple) {
-            Some((_, cursor)) => cursor,
-            None => return Err(error_invalid_value!(c))
-        };
-        let result = match txn.access() {
-            Accessor::Const(acc) => cursor.$op::<[u8], [u8]>(&acc, $($arg)*).is_ok(),
-            Accessor::Write(acc) => cursor.$op::<[u8], [u8]>(&acc, $($arg)*).is_ok()
-        };
-        $me.cursors.insert(tuple, (tx_type!($me, &$env_id), cursor));
-        if result {
+macro_rules! cursor_op {
+    ($me: expr, $env: expr, $env_id: expr, $op: ident, ($($arg: expr),*)) => {{
+        let result = cursor_val_op!($me, $env, $env_id, $op, ($($arg)*));
+        if result.is_ok() {
           $env.push(STACK_TRUE);
         } else {
           $env.push(STACK_FALSE);
@@ -171,29 +180,15 @@ macro_rules! cursor_op {
     }};
 }
 
-macro_rules! cursor_map_op {
-    ($me: expr, $env: expr, $env_id: expr, $op: ident, ($($arg: expr),*), $map: expr, $orelse: expr) => {{
-        let txn = read_or_write_transaction!($me, &$env_id);
-        let c = stack_pop!($env);
-
-        let tuple = ($env_id, Vec::from(c));
-        let mut cursor = match $me.cursors.remove(&tuple) {
-            Some((_, cursor)) => cursor,
-            None => return Err(error_invalid_value!(c))
-        };
-        let result = match txn.access() {
-            Accessor::Const(acc) => cursor.$op::<[u8], [u8]>(&acc, $($arg)*).map_err($orelse).and_then($map),
-            Accessor::Write(acc) => cursor.$op::<[u8], [u8]>(&acc, $($arg)*).map_err($orelse).and_then($map)
-        };
-        $me.cursors.insert(tuple, (tx_type!($me, &$env_id), cursor));
-        result
-    }};
-}
-
 builtins!("mod_storage.builtins");
 
-impl<'a, T, N> Dispatcher<'a> for Handler<'a, T, N>
-    where T : AsRef<storage::Storage<'a>> + 'a,
+impl<'a, KV, T, N, E, CR, CW, R, W> Dispatcher<'a> for Handler<'a, KV, T, N, E, CR, CW, R, W>
+    where R : kv::ReadTransaction<'a, Cursor = CR> + 'a,
+          W : kv::WriteTransaction<'a, Cursor = CW> + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<'a, Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a,
+          CR : kv::Cursor<'a>, CW : kv::Cursor<'a>,
           N : NonVolatileMemory {
     fn done(&mut self, _: &mut Env, pid: EnvId) {
         self.txns.get_mut(&pid)
@@ -229,17 +224,24 @@ impl<'a, T, N> Dispatcher<'a> for Handler<'a, T, N>
     }
 }
 
-impl<'a, T, N> Handler<'a, T, N>
-    where T : AsRef<storage::Storage<'a>> + 'a,
+impl<'a, KV, T, N, E, CR, CW, R, W> Handler<'a, KV, T, N, E, CR, CW, R, W>
+    where R : kv::ReadTransaction<'a, Cursor = CR> + 'a,
+          W : kv::WriteTransaction<'a, Cursor = CW> + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<'a, Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a,
+          CR : kv::Cursor<'a>, CW : kv::Cursor<'a>,
           N : NonVolatileMemory {
-    pub fn new(db: T, timestamp: Arc<timestamp::Timestamp<N>>) -> Self {
-        let maxkeysize = BigUint::from_u32(db.as_ref().env.maxkeysize()).unwrap().to_bytes_be();
+    pub fn new(kv: T, timestamp: Arc<timestamp::Timestamp<N>>) -> Self {
+        let maxkeysize = BigUint::from_u32(kv.as_ref().max_keysize()).unwrap().to_bytes_be();
         Handler {
-            db: db,
+            kv,
             txns: HashMap::new(),
-            cursors: BTreeMap::new(),
+            read_cursors: BTreeMap::new(),
+            write_cursors: BTreeMap::new(),
             maxkeysize: maxkeysize,
             timestamp,
+            phantom: PhantomData,
         }
     }
 
@@ -271,12 +273,10 @@ impl<'a, T, N> Handler<'a, T, N>
                                "".as_bytes(),
                                ERROR_DATABASE));
                 }
-                match self.db.as_ref().write() {
-                    None => Err(Error::Reschedule),
-                    Some(result) =>
-                        match result {
-                            Err(e) => Err(error_database!(e)),
-                            Ok(txn) => {
+                match self.kv.as_ref().write_transaction() {
+                    Err(kv::TransactionOriginationError::TransactionLimitReached(_)) => Err(Error::Reschedule),
+                    Err(kv::TransactionOriginationError::DatabaseError(e)) => Err(error_database!(e)),
+                    Ok(txn) => {
                                 let txid = self.new_txid(env).unwrap();
                                 if !self.txns.contains_key(&pid) {
                                     self.txns.insert(pid, Vec::new());
@@ -285,14 +285,13 @@ impl<'a, T, N> Handler<'a, T, N>
                                 env.program.push(WRITE_END);
                                 env.program.push(v);
                                 Ok(())
-                            }
-                        }
+                            },
                 }
             }
             WRITE_END => {
                 match self.txns.get_mut(&pid).unwrap().pop() {
                     Some(_) => {
-                        self.cursors = mem::replace(&mut self.cursors,
+                        self.write_cursors = mem::replace(&mut self.write_cursors,
                                                     BTreeMap::new()).into_iter()
                             .filter(|t| ((*t).1).0 != TxType::Read).collect();
                     },
@@ -313,28 +312,25 @@ impl<'a, T, N> Handler<'a, T, N>
         match instruction {
             READ => {
                 let v = stack_pop!(env);
-                match self.db.as_ref().read() {
-                    None => Err(Error::Reschedule),
-                    Some(result) =>
-                        match result {
-                            Err(e) => Err(error_database!(e)),
-                            Ok(txn) => {
-                                let txid = self.new_txid(env).unwrap();
-                                if !self.txns.contains_key(&pid) {
-                                    self.txns.insert(pid, Vec::new());
-                                }
-                                let _ = self.txns.get_mut(&pid).unwrap().push(Txn::Read(txn, txid));
-                                env.program.push(READ_END);
-                                env.program.push(v);
-                                Ok(())
-                            }
+                match self.kv.as_ref().read_transaction() {
+                    Err(kv::TransactionOriginationError::TransactionLimitReached(_)) => Err(Error::Reschedule),
+                    Err(kv::TransactionOriginationError::DatabaseError(e)) => Err(error_database!(e)),
+                    Ok(txn) => {
+                        let txid = self.new_txid(env).unwrap();
+                        if !self.txns.contains_key(&pid) {
+                            self.txns.insert(pid, Vec::new());
+                        }
+                        let _ = self.txns.get_mut(&pid).unwrap().push(Txn::Read(txn, txid));
+                        env.program.push(READ_END);
+                        env.program.push(v);
+                        Ok(())
                     }
                 }
             }
             READ_END => {
                 match self.txns.get_mut(&pid).unwrap().pop() {
                     Some(_) => {
-                        self.cursors = mem::replace(&mut self.cursors,
+                        self.read_cursors = mem::replace(&mut self.read_cursors,
                                                     BTreeMap::new()).into_iter()
                             .filter(|t| ((*t).1).0 != TxType::Read).collect();
                     },
@@ -380,11 +376,9 @@ impl<'a, T, N> Handler<'a, T, N>
                 let value = stack_pop!(env);
                 let key = stack_pop!(env);
 
-                let mut access = txn.access();
-
-                match access.put(&self.db.as_ref().db, key, value, lmdb::put::NOOVERWRITE) {
+                match txn.put(key, value) {
                     Ok(_) => Ok(()),
-                    Err(lmdb::Error::Code(code)) if lmdb::error::KEYEXIST == code => Err(error_duplicate_key!(key)),
+                    Err(kv::Error::DuplicateKey) => Err(error_duplicate_key!(key)),
                     Err(err) => Err(error_database!(err)),
                 }
             },
@@ -424,20 +418,21 @@ impl<'a, T, N> Handler<'a, T, N>
                        -> PassResult<'a> {
         instruction_is!(instruction, RETR);
         let key = stack_pop!(env);
-        self.txns.get(&pid)
-            .and_then(|v| Some(&v[v.len() - 1]))
-            .and_then(|txn| Some(txn.access()))
-            .map_or_else(|| Err(error_no_transaction!()), |acc| {
-                match acc.get::<[u8], [u8]>(&self.db.as_ref().db, key) {
-                    Ok(Some(val)) => {
-                        let slice = alloc_and_write!(val, env);
-                        env.push(slice);
-                        Ok(())
-                    },
-                    Ok(None) => Err(error_unknown_key!(key)),
-                    Err(err) => Err(error_database!(err)),
-                }
-            })
+//        match self.txns.get(&pid)
+//            .and_then(|v| Some(&v[v.len() - 1])) {
+//            None => Err(error_no_transaction!()),
+//            Some(txn) =>
+//                for_either_txn_type!(txn, tx, match tx.get(key, env) {
+//                    Ok(val) => {
+//                        let slice = alloc_and_write!(val, env);
+//                        env.push(slice);
+//                        Ok(())
+//                    },
+//                    Err(kv::Error::UnknownKey) => Err(error_unknown_key!(key)),
+//                    Err(err) => Err(error_database!(err)),
+//                }),
+//        }
+        Ok(())
     }
 
     #[inline]
@@ -448,27 +443,32 @@ impl<'a, T, N> Handler<'a, T, N>
                          -> PassResult<'a> {
         instruction_is!(instruction, ASSOCQ);
         let key = stack_pop!(env);
-        self.txns.get(&pid)
-            .and_then(|v| Some(&v[v.len() - 1]))
-            .and_then(|txn| Some(txn.access()))
-            .map_or_else(|| Err(error_no_transaction!()),  |acc| {
-                match acc.get::<[u8], [u8]>(&self.db.as_ref().db, key) {
-                    Ok(Some(_)) => {
-                        env.push(STACK_TRUE);
-                        Ok(())
-                    },
-                    Ok(None) => {
-                        env.push(STACK_FALSE);
-                        Ok(())
-                    }
-                    Err(err) => Err(error_database!(err)),
-                }
-            })
+//        match self.txns.get(&pid)
+//            .and_then(|v| Some(&v[v.len() - 1])) {
+//            None => Err(error_no_transaction!()),
+//            Some(txn) =>
+//                for_either_txn_type!(txn, tx, match tx.get(key, env) {
+//                    Ok(val) => {
+//                        env.push(STACK_TRUE);
+//                        Ok(())
+//                    },
+//                    Err(kv::Error::UnknownKey) => {
+//                        env.push(STACK_FALSE);
+//                        Ok(())
+//                    },
+//                    Err(err) => Err(error_database!(err)),
+//                }
+//            ),
+//        }
+        Ok(())
     }
 
-    fn cast_away(cursor: lmdb::Cursor) -> lmdb::Cursor<'a, 'a> {
-        unsafe { ::std::mem::transmute(cursor) }
-    }
+//    fn cast_away_read_cursor<'b, C1 : kv::Cursor<'b>>(cursor: C1) -> CR {
+//        unsafe { ::std::mem::transmute(cursor) }
+//    }
+//    fn cast_away_write_cursor<'b, C1 : kv::Cursor<'b>>(cursor: C1) -> CW {
+//        unsafe { ::std::mem::transmute(cursor) }
+//    }
 
     #[inline]
     pub fn handle_cursor(&mut self,
@@ -478,27 +478,43 @@ impl<'a, T, N> Handler<'a, T, N>
 						 -> PassResult<'a> {
         use serde_cbor;
         instruction_is!(instruction, CURSOR);
-        let db = self.db.as_ref();
-        let cursor = self.txns.get(&pid)
-            .and_then(|v| Some(&v[v.len() - 1]))
-            .map(|txn| txn.cursor(&db.db));
-        match cursor {
-            Some(cursor) => {
-                match cursor {
-                    Ok(cursor) => {
+        match self.txns.get_mut(&pid) {
+            None => Err(error_no_transaction!()),
+            Some(v) => {
+                let txn = v.pop();
+                match txn {
+                    None => Err(error_no_transaction!()),
+                    Some(txn) => {
                         let id = CursorId::new();
                         let bytes = serde_cbor::to_vec(&id).unwrap();
-                        self.cursors.insert((pid.clone(), bytes.clone()),
-                                            (tx_type!(self, pid),
-                                             Handler::<T, N>::cast_away(cursor)));
-                        let slice = alloc_and_write!(bytes.as_slice(), env);
-                        env.push(slice);
+
+                        match txn {
+                            Txn::Read(txn, _) => {
+                                match txn.cursor() {
+                                    Err(err) => return Err(error_database!(err)),
+                                    Ok(cursor) => {
+                                        self.read_cursors.insert((pid.clone(), bytes.clone()),
+                                                                 (tx_type!(self, pid), cursor));
+                                    }
+                                }
+                            },
+                            Txn::Write(txn, _) => {
+                                match txn.cursor() {
+                                    Err(err) => return Err(error_database!(err)),
+                                    Ok(cursor) => {
+                                        self.write_cursors.insert((pid.clone(), bytes.clone()),
+                                                                  (tx_type!(self, pid), cursor));
+                                    },
+                                }
+                            },
+                        }
+
+                        v.push(txn);
+
                         Ok(())
-                    },
-                    Err(err) => Err(error_database!(err))
+                    }
                 }
             },
-            None => Err(error_no_transaction!()),
         }
     }
 
@@ -566,10 +582,9 @@ impl<'a, T, N> Handler<'a, T, N>
                               pid: EnvId)
                               -> PassResult<'a> {
         instruction_is!(instruction, CURSOR_POSITIONEDQ);
-        let result = match cursor_map_op!(self, env, pid, get_current, (), |_| Ok(true), |_| false) {
-            Ok(true) => STACK_TRUE,
-            Err(false) => STACK_FALSE,
-            Err(true) | Ok(false) => unreachable!(),
+        let result = match cursor_val_op!(self, env, pid, is_positioned, ()) {
+            true => STACK_TRUE,
+            false => STACK_FALSE,
         };
         env.push(result);
         Ok(())
@@ -582,13 +597,13 @@ impl<'a, T, N> Handler<'a, T, N>
                              pid: EnvId)
                              -> PassResult<'a> {
         instruction_is!(instruction, CURSOR_KEY);
-        cursor_map_op!(self, env, pid, get_current, (),
-           |(key, _) | {
-              let slice = alloc_slice!(key.len(), env);
-              slice.copy_from_slice(key);
-              env.push(slice);
-              Ok(())
-        }, |_| error_no_value!())
+        match cursor_val_op!(self, env, pid, current_key, (env)) {
+            Some(key) => {
+                env.push(key);
+                Ok(())
+            },
+            None => Err(error_no_value!()),
+        }
     }
 
     #[inline]
@@ -598,13 +613,14 @@ impl<'a, T, N> Handler<'a, T, N>
                              pid: EnvId)
                              -> PassResult<'a> {
         instruction_is!(instruction, CURSOR_VAL);
-        cursor_map_op!(self, env, pid, get_current, (),
-           |(_, val) | {
-              let slice = alloc_slice!(val.len(), env);
-              slice.copy_from_slice(val);
-              env.push(slice);
-              Ok(())
-        }, |_| error_no_value!())
+        instruction_is!(instruction, CURSOR_KEY);
+        match cursor_val_op!(self, env, pid, current_value, (env)) {
+            Some(key) => {
+                env.push(key);
+                Ok(())
+            },
+            None => Err(error_no_value!()),
+        }
     }
 
     #[inline]
@@ -636,9 +652,10 @@ mod tests {
     use lmdb;
     use crossbeam;
     use script::binparser;
-    use storage;
     use timestamp;
     use rand::Rng;
+    use kv;
+    use kv::{KeyValueStore, WriteTransaction, ReadTransaction};
 
     const _EMPTY: &'static [u8] = b"";
 
@@ -681,35 +698,26 @@ mod tests {
         let dir = TempDir::new("pumpkindb").unwrap();
         let path = dir.path().to_str().unwrap();
         fs::create_dir_all(path).expect("can't create directory");
-        let env = unsafe {
-            let mut builder = lmdb::EnvBuilder::new().expect("can't create env builder");
-            builder.set_mapsize(1024 * 1024 * 1024).expect("can't set mapsize");
-            builder.open(path, lmdb::open::NOTLS, 0o600).expect("can't open env")
-        };
+        let env = kv::lmdb::create_environment(String::from(path), None, None).unwrap();
         let mut nvmem = MmapedFile::new_anonymous(20).unwrap();
         let region = nvmem.claim(20).unwrap();
         let timestamp = Arc::new(timestamp::Timestamp::new(region));
-        let db = storage::Storage::new(&env);
+        let db = kv::lmdb::LmdbKeyValueStore::new(&env).unwrap();
         b.iter(move || {
             let mut timestamps = Vec::new();
             for i in 0..1000 {
                 timestamps.push(timestamp.hlc());
             }
             for ts in timestamps {
-                let txn = lmdb::WriteTransaction::new(db.env).unwrap();
-                {
-                    let mut access = txn.access();
-                    let mut key: Vec<u8> = Vec::new();
-
-                    ts.write_bytes(&mut key);
-
-                    let _ = access.put(&db.db,
-                             key.as_slice(),
-                             "Hello".as_bytes(),
-                             lmdb::put::NOOVERWRITE)
-                        .unwrap();
+                match db.write_transaction() {
+                    Ok(txn) => {
+                        let mut key: Vec<u8> = Vec::new();
+                        ts.write_bytes(&mut key);
+                        txn.put(key.as_slice(), "Hello".as_bytes()).unwrap();
+                        let _ = txn.commit().unwrap();
+                    },
+                    Err(err) => panic!("Error {:?}", err),
                 }
-                let _ = txn.commit().unwrap();
             }
         });
     }

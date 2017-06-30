@@ -53,3 +53,6 @@ extern crate pumpkinscript;
 extern crate uuid;
 
 extern crate num_cpus;
+
+#[macro_use]
+extern crate quick_error;

@@ -12,8 +12,10 @@
 
 include!("crates.rs");
 
+pub mod allocator;
+pub use allocator::Allocator;
 pub mod script;
 pub mod messaging;
-pub mod storage;
 pub mod timestamp;
 pub mod nvmem;
+pub mod kv;

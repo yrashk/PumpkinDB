@@ -9,6 +9,7 @@
 //! This module implements algorithms for managing Env heap
 //!
 
+use super::super::Allocator;
 use alloc::raw_vec::RawVec;
 use std::cmp;
 use std::slice;
@@ -19,19 +20,23 @@ use std::slice;
 ///
 /// EnvHeap accomplishes that by adding new chunks instead
 /// of resizing existing ones.
-pub struct EnvHeap {
+use std::marker::PhantomData;
+pub struct EnvHeap<'a> {
     chunks: Vec<(usize, RawVec<u8>)>,
+    phantom: PhantomData<&'a ()>,
 }
 
-impl EnvHeap {
+impl<'a> EnvHeap<'a> {
     /// Creates new EnvHeap with a certain chunk size, which
     /// can't be changed later
     pub fn new(chunk_size: usize) -> Self {
-        EnvHeap { chunks: vec![(0, RawVec::with_capacity(chunk_size))] }
+        EnvHeap { chunks: vec![(0, RawVec::with_capacity(chunk_size))], phantom: PhantomData }
     }
+}
 
+impl<'a> Allocator<'a> for EnvHeap<'a> {
     /// Allocates a new mutable slice
-    pub fn alloc(&mut self, size: usize) -> &mut [u8] {
+    fn alloc(&mut self, size: usize) -> &'a mut [u8] {
         let nchunks = self.chunks.len();
         //Look for chunks with enough free space.
         for i in 0..nchunks {
@@ -60,6 +65,7 @@ impl EnvHeap {
 #[allow(unused_variables, unused_must_use, unused_mut)]
 mod tests {
     use script::envheap::EnvHeap;
+    use allocator::Allocator;
 
     #[test]
     fn alloc() {

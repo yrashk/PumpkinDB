@@ -267,17 +267,14 @@ macro_rules! eval {
         ($script: expr, $env: ident, $result: ident, $sender: expr, $receiver: ident, $expr: expr) => {
           {
             use $crate::script::SchedulerHandle;
+            use $crate::kv;
+            use $crate::kv::{KeyValueStore, lmdb};
             let dir = TempDir::new("pumpkindb").unwrap();
             let path = dir.path().to_str().unwrap();
             fs::create_dir_all(path).expect("can't create directory");
-            let env = unsafe {
-                lmdb::EnvBuilder::new()
-                    .expect("can't create env builder")
-                    .open(path, lmdb::open::NOTLS, 0o600)
-                    .expect("can't open env")
-            };
+            let env = lmdb::create_environment(String::from(path), None, None).expect("can't create env");
 
-            let db = Arc::new(storage::Storage::new(&env));
+            let db = Arc::new(lmdb::LmdbKeyValueStore::new(&env).unwrap());
             crossbeam::scope(|scope| {
                 let mut nvmem = MmapedFile::new_anonymous(20).unwrap();
                 let region = nvmem.claim(20).unwrap();
@@ -288,9 +285,10 @@ macro_rules! eval {
                 let publisher_clone = messaging_accessor.clone();
                 let subscriber_clone = messaging_accessor.clone();
                 let timestamp_clone = timestamp.clone();
-                let (mut scheduler, sender) = Scheduler::new(
-                    dispatcher::StandardDispatcher::new(db.clone(), publisher_clone.clone(), subscriber_clone.clone(),
-                    timestamp_clone));
+                let dispatcher = dispatcher::StandardDispatcher::new(db.clone(),
+                    publisher_clone.clone(), subscriber_clone.clone(),
+                    timestamp_clone);
+                let (mut scheduler, sender) = Scheduler::new(dispatcher);
                 let handle = scope.spawn(move || scheduler.run());
                 let script = parse($script).unwrap();
                 let (callback, receiver) = mpsc::channel::<ResponseMessage>();
@@ -338,16 +336,14 @@ macro_rules! bench_eval {
         ($script: expr, $b: expr) => {
           {
             use $crate::script::SchedulerHandle;
+            use $crate::kv;
+            use $crate::kv::{KeyValueStore, lmdb};
             let dir = TempDir::new("pumpkindb").unwrap();
             let path = dir.path().to_str().unwrap();
             fs::create_dir_all(path).expect("can't create directory");
-            let env = unsafe {
-                let mut builder = lmdb::EnvBuilder::new().expect("can't create env builder");
-                builder.set_mapsize(1024 * 1024 * 1024).expect("can't set mapsize");
-                builder.open(path, lmdb::open::NOTLS, 0o600).expect("can't open env")
-            };
+            let env = lmdb::create_environment(String::from(path), None, None).expect("can't create env");
 
-            let db = Arc::new(storage::Storage::new(&env));
+            let db = Arc::new(lmdb::LmdbKeyValueStore::new(&env).unwrap());
             let cpus = ::num_cpus::get();
             crossbeam::scope(|scope| {
                 let mut simple = messaging::Simple::new();

@@ -361,7 +361,6 @@ mod tests {
     use tempdir::TempDir;
     use lmdb;
     use crossbeam;
-    use storage;
     use timestamp;
     use rand::Rng;
 

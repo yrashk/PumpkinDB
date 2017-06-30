@@ -7,6 +7,7 @@
 use super::Error;
 use super::envheap::EnvHeap;
 use super::super::messaging;
+use allocator::Allocator;
 
 use std::collections::BTreeMap;
 
@@ -23,7 +24,7 @@ pub struct Env<'a> {
     pub program: Vec<&'a [u8]>,
     stack: Vec<&'a [u8]>,
     pub stack_size: usize,
-    heap: EnvHeap,
+    heap: EnvHeap<'a>,
     #[cfg(feature = "scoped_dictionary")]
     pub dictionary: Vec<BTreeMap<&'a [u8], &'a [u8]>>,
     #[cfg(not(feature = "scoped_dictionary"))]
@@ -32,6 +33,12 @@ pub struct Env<'a> {
     pub tracking_errors: usize,
     pub aborting_try: Vec<Error>,
     published_message_callback: Option<Box<messaging::PublishedMessageCallback + Send>>,
+}
+
+impl<'a> Allocator<'a> for Env<'a> {
+    fn alloc(&mut self, size: usize) -> &'a mut [u8] {
+        self.heap.alloc(size)
+    }
 }
 
 impl<'a> ::std::fmt::Debug for Env<'a> {
