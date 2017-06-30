@@ -207,7 +207,6 @@ pub enum ResponseMessage {
 
 pub type TrySendError<T> = std::sync::mpsc::TrySendError<T>;
 
-use storage;
 use timestamp;
 
 #[cfg(feature="mod_core")]
@@ -530,7 +529,6 @@ mod tests {
     use lmdb;
     use crossbeam;
     use super::binparser;
-    use storage;
     use rand::Rng;
 
     const _EMPTY: &'static [u8] = b"";

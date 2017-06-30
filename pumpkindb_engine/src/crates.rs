@@ -18,7 +18,7 @@ extern crate num_bigint;
 extern crate num_iter;
 extern crate num_traits;
 extern crate snowflake;
-pub extern crate lmdb_zero as lmdb;
+extern crate lmdb_sys as lmdb;
 #[cfg(test)]
 extern crate tempdir;
 #[cfg(test)]
@@ -53,3 +53,6 @@ extern crate pumpkinscript;
 extern crate uuid;
 
 extern crate num_cpus;
+
+#[macro_use]
+extern crate quick_error;

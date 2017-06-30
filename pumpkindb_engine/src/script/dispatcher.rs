@@ -5,6 +5,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use super::*;
+use kv;
+use std::ops::Deref;
 
 pub trait Dispatcher<'a> {
     #[allow(unused_variables)]
@@ -97,10 +99,14 @@ macro_rules! for_each_dispatcher {
 
 use super::super::nvmem::NonVolatileMemory;
 
-pub struct StandardDispatcher<'a, P: 'a, S: 'a, N: 'a, T>
+pub struct StandardDispatcher<'a, P: 'a, S: 'a, N: 'a, KV, T, R, W, CR, CW, E>
     where P : messaging::Publisher, S : messaging::Subscriber,
-          N : NonVolatileMemory, T : AsRef<storage::Storage<'a>> + 'a
-{
+          N : NonVolatileMemory,
+          R : kv::ReadTransaction + 'a,
+          W : kv::WriteTransaction + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a {
     #[cfg(feature = "mod_core")]
     core: mod_core::Handler<'a>,
     #[cfg(feature = "mod_stack")]
@@ -110,7 +116,7 @@ pub struct StandardDispatcher<'a, P: 'a, S: 'a, N: 'a, T>
     #[cfg(feature = "mod_numbers")]
     numbers: mod_numbers::Handler<'a>,
     #[cfg(feature = "mod_storage")]
-    storage: mod_storage::Handler<'a, T, N>,
+    storage: mod_storage::Handler<'a, KV, T, N, E, CR, CW, R, W>,
     #[cfg(feature = "mod_hash")]
     hash: mod_hash::Handler<'a>,
     #[cfg(feature = "mod_hlc")]
@@ -122,15 +128,20 @@ pub struct StandardDispatcher<'a, P: 'a, S: 'a, N: 'a, T>
     #[cfg(feature = "mod_uuid")]
     uuid: mod_uuid::Handler<'a>,
     #[cfg(feature = "mod_string")]
-    string: mod_string::Handler<'a>
+    string: mod_string::Handler<'a>,
+    phantom: PhantomData<(&'a (), (P, S, N, R, W, CR, CW, E, KV, T))>,
 }
 
 
-impl<'a, P: 'a, S: 'a, N: 'a, T> StandardDispatcher<'a, P, S, N, T>
+impl<'a, P: 'a, S: 'a, N: 'a, KV, T, R, W, CR, CW, E> StandardDispatcher<'a, P, S, N, KV, T, R, W, CR, CW, E>
     where P : messaging::Publisher, S : messaging::Subscriber,
-          N : NonVolatileMemory, T : AsRef<storage::Storage<'a>> + 'a {
+          N : NonVolatileMemory, R : kv::ReadTransaction + 'a,
+          W : kv::WriteTransaction + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a {
 
-    pub fn new(db: T,
+    pub fn new(kv: T,
                publisher: P, subscriber: S,
                timestamp_state: Arc<timestamp::Timestamp<N>>)
                -> Self {
@@ -144,7 +155,7 @@ impl<'a, P: 'a, S: 'a, N: 'a, T> StandardDispatcher<'a, P, S, N, T>
                 #[cfg(feature = "mod_numbers")]
                     numbers: mod_numbers::Handler::new(),
                 #[cfg(feature = "mod_storage")]
-                    storage: mod_storage::Handler::new(db, timestamp_state.clone()),
+                    storage: mod_storage::Handler::new(kv, timestamp_state.clone()),
                 #[cfg(feature = "mod_hash")]
                     hash: mod_hash::Handler::new(),
                 #[cfg(feature = "mod_hlc")]
@@ -157,13 +168,17 @@ impl<'a, P: 'a, S: 'a, N: 'a, T> StandardDispatcher<'a, P, S, N, T>
                     uuid: mod_uuid::Handler::new(),
                 #[cfg(feature = "mod_string")]
                     string: mod_string::Handler::new(),
+                phantom: PhantomData,
         }
     }
 }
 
-impl<'a, P: 'a, S: 'a, N: 'a, T> Dispatcher<'a> for StandardDispatcher<'a, P, S, N, T>
+impl<'a, P: 'a, S: 'a, N: 'a, KV, T, R, W, CR, CW, E> Dispatcher<'a> for StandardDispatcher<'a, P, S, N, KV, T, R, W, CR, CW, E>
     where P : messaging::Publisher, S : messaging::Subscriber, N : NonVolatileMemory,
-          T : AsRef<storage::Storage<'a>> + 'a {
+          R : kv::ReadTransaction + 'a, W : kv::WriteTransaction + 'a,
+          E : ::std::error::Error,
+          KV : kv::KeyValueStore<Error = E, ReadTransaction = R, WriteTransaction = W> + 'a,
+          T : AsRef<KV> + 'a {
     fn init(&mut self, env: &mut Env<'a>, pid: EnvId) {
         for_each_dispatcher!(disp, self, disp.init(env, pid));
     }
