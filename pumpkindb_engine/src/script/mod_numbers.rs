@@ -272,7 +272,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_uint_add(env, instruction, pid)
         .if_unhandled_try(|| self.handle_uint_sub(env, instruction, pid))
         .if_unhandled_try(|| self.handle_int_add(env, instruction, pid))
@@ -320,7 +320,7 @@ impl<'a> Handler<'a> {
 
 
     #[inline]
-    fn handle_uint_add(&mut self,
+    fn handle_uint_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -339,7 +339,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn handle_int_add(&mut self,
+    fn handle_int_add(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -358,7 +358,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn handle_int_sub(&mut self,
+    fn handle_int_sub(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -377,7 +377,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn handle_int_to_uint(&mut self,
+    fn handle_int_to_uint(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -392,7 +392,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    fn handle_uint_to_int(&mut self,
+    fn handle_uint_to_int(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -411,7 +411,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint_sub(&mut self,
+    fn handle_uint_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -436,7 +436,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint_equalq(&mut self,
+    fn handle_uint_equalq(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -445,7 +445,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint_gtq(&mut self,
+    fn handle_uint_gtq(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -454,7 +454,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint_ltq(&mut self,
+    fn handle_uint_ltq(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -463,7 +463,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int_equalq(&mut self,
+    fn handle_int_equalq(&self,
                          env: &mut Env<'a>,
                          instruction: &'a [u8],
                          _: EnvId)
@@ -472,7 +472,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int_gtq(&mut self,
+    fn handle_int_gtq(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -481,7 +481,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int_ltq(&mut self,
+    fn handle_int_ltq(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -490,7 +490,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint8_add(&mut self,
+    fn handle_uint8_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -500,7 +500,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint8_sub(&mut self,
+    fn handle_uint8_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -510,7 +510,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int8_add(&mut self,
+    fn handle_int8_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -520,7 +520,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int8_sub(&mut self,
+    fn handle_int8_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -530,7 +530,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint16_add(&mut self,
+    fn handle_uint16_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -540,7 +540,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint16_sub(&mut self,
+    fn handle_uint16_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -550,7 +550,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int16_add(&mut self,
+    fn handle_int16_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -560,7 +560,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int16_sub(&mut self,
+    fn handle_int16_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -570,7 +570,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint32_add(&mut self,
+    fn handle_uint32_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -580,7 +580,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint32_sub(&mut self,
+    fn handle_uint32_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -590,7 +590,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int32_add(&mut self,
+    fn handle_int32_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -600,7 +600,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int32_sub(&mut self,
+    fn handle_int32_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -610,7 +610,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint64_add(&mut self,
+    fn handle_uint64_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -620,7 +620,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint64_sub(&mut self,
+    fn handle_uint64_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -630,7 +630,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int64_add(&mut self,
+    fn handle_int64_add(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -640,7 +640,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int64_sub(&mut self,
+    fn handle_int64_sub(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)
@@ -650,7 +650,7 @@ impl<'a> Handler<'a> {
     }
     
     #[inline]
-    fn handle_f32_add(&mut self,
+    fn handle_f32_add(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)
@@ -670,7 +670,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_f32_sub(&mut self,
+    fn handle_f32_sub(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -690,7 +690,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_f64_add(&mut self,
+    fn handle_f64_add(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)
@@ -710,7 +710,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_f64_sub(&mut self,
+    fn handle_f64_sub(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -730,7 +730,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_uint_to_string(&mut self,
+    fn handle_uint_to_string(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)
@@ -748,7 +748,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_int_to_string(&mut self,
+    fn handle_int_to_string(&self,
                              env: &mut Env<'a>,
                              instruction: &'a [u8],
                              _: EnvId)
@@ -766,7 +766,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_to_string(&mut self,
+    fn handle_to_string(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)

@@ -9,26 +9,21 @@ use std::iter::Iterator;
 
 pub trait Dispatcher<'a> {
     #[allow(unused_variables)]
-    fn init(&mut self, env: &mut Env<'a>, pid: EnvId) {}
+    fn init(&self, env: &mut Env<'a>, pid: EnvId) {}
     #[allow(unused_variables)]
-    fn done(&mut self, env: &mut Env<'a>, pid: EnvId) {}
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a>;
+    fn done(&self, env: &mut Env<'a>, pid: EnvId) {}
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a>;
 }
 
 include!("macros.rs");
 
 impl<'a> Dispatcher<'a> for Vec<Box<Dispatcher<'a>>> {
-    fn init(&mut self, env: &mut Env<'a>, pid: EnvId) {
-        for mut disp in self.into_iter() {
+    fn init(&self, env: &mut Env<'a>, pid: EnvId) {
+        for disp in self.into_iter() {
             disp.init(env, pid);
         }
     }
-    fn done(&mut self, env: &mut Env<'a>, pid: EnvId) {
-        for mut disp in self.into_iter() {
-            disp.done(env, pid);
-        }
-    }
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         let mut iter = self.into_iter();
         loop {
             match iter.next() {
@@ -50,57 +45,57 @@ macro_rules! for_each_dispatcher {
     ($module: ident, $dispatcher : expr, $expr: expr) => {{
         #[cfg(feature="mod_core")]
         {
-           let ref mut $module = $dispatcher.core;
+           let ref $module = $dispatcher.core;
            $expr
         }
         #[cfg(feature="mod_stack")]
         {
-           let ref mut $module = $dispatcher.stack;
+           let ref $module = $dispatcher.stack;
            $expr
         }
         #[cfg(feature="mod_binaries")]
         {
-           let ref mut $module = $dispatcher.binaries;
+           let ref $module = $dispatcher.binaries;
            $expr
         }
         #[cfg(feature="mod_numbers")]
         {
-           let ref mut $module = $dispatcher.numbers;
+           let ref $module = $dispatcher.numbers;
            $expr
         }
         #[cfg(feature="mod_storage")]
         {
-           let ref mut $module = $dispatcher.storage;
+           let ref $module = $dispatcher.storage;
            $expr
         }
         #[cfg(feature="mod_hash")]
         {
-           let ref mut $module = $dispatcher.hash;
+           let ref $module = $dispatcher.hash;
            $expr
         }
         #[cfg(feature="mod_hlc")]
         {
-           let ref mut $module = $dispatcher.hlc;
+           let ref $module = $dispatcher.hlc;
            $expr
         }
         #[cfg(feature="mod_json")]
         {
-           let ref mut $module = $dispatcher.json;
+           let ref $module = $dispatcher.json;
            $expr
         }
         #[cfg(feature="mod_msg")]
         {
-           let ref mut $module = $dispatcher.msg;
+           let ref $module = $dispatcher.msg;
            $expr
         }
         #[cfg(feature="mod_uuid")]
         {
-            let ref mut $module = $dispatcher.uuid;
+            let ref $module = $dispatcher.uuid;
             $expr
         }
         #[cfg(feature="mod_string")]
         {
-            let ref mut $module = $dispatcher.string;
+            let ref $module = $dispatcher.string;
             $expr
         }
     }};
@@ -175,18 +170,18 @@ impl<'a, P: 'a, S: 'a, N: 'a, T> StandardDispatcher<'a, P, S, N, T>
 impl<'a, P: 'a, S: 'a, N: 'a, T> Dispatcher<'a> for StandardDispatcher<'a, P, S, N, T>
     where P : messaging::Publisher, S : messaging::Subscriber, N : NonVolatileMemory,
           T : AsRef<storage::Storage<'a>> + 'a {
-    fn init(&mut self, env: &mut Env<'a>, pid: EnvId) {
+    fn init(&self, env: &mut Env<'a>, pid: EnvId) {
         for_each_dispatcher!(disp, self, disp.init(env, pid));
     }
-    fn done(&mut self, env: &mut Env<'a>, pid: EnvId) {
+    fn done(&self, env: &mut Env<'a>, pid: EnvId) {
         for_each_dispatcher!(disp, self, disp.done(env, pid));
     }
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         for_each_dispatcher!(disp, self, {
-           let result = disp.handle(env, instruction, pid);
-           if !result.is_unhandled() {
-              return result;
-           }
+            let result = disp.handle(env, instruction, pid);
+            if !result.is_unhandled() {
+                return result;
+            }
         });
         Err(Error::UnknownInstruction)
     }
@@ -199,8 +194,9 @@ mod tests {
   use pumpkinscript::parse;
   use script::{Env, EnvId, PassResult,
                Scheduler, SchedulerHandle, Error, RequestMessage, ResponseMessage,
-               Dispatcher, TryInstruction};
+               Dispatcher, TryInstruction, offset_by_size, ERROR_EMPTY_STACK};
   use std::sync::mpsc;
+  use std::thread;
   use crossbeam;
 
   use std::marker::PhantomData;
@@ -215,7 +211,7 @@ mod tests {
           MyDispatcher{ phantom: PhantomData }
       }
 
-      pub fn handle_test(&mut self, env: &mut Env<'a>,
+      pub fn handle_test(&self, env: &mut Env<'a>,
                           instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
           return_unless_instructions_equal!(instruction, b"\x84TEST");
           env.push(b"TEST");
@@ -225,7 +221,7 @@ mod tests {
   }
 
   impl<'a> Dispatcher<'a> for MyDispatcher<'a> {
-     fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+     fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
          self.handle_test(env, instruction, pid)
              .if_unhandled_try(|| Err(Error::UnknownInstruction))
      }

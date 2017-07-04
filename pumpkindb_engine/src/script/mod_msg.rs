@@ -21,7 +21,7 @@ pub struct Handler<'a, P: messaging::Publisher, S: messaging::Subscriber> {
 }
 
 impl<'a, P: messaging::Publisher, S: messaging::Subscriber> Dispatcher<'a> for Handler<'a, P, S> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_publish(env, instruction, pid)
         .if_unhandled_try(|| self.handle_subscribe(env, instruction, pid))
         .if_unhandled_try(|| self.handle_unsubscribe(env, instruction, pid))
@@ -39,7 +39,7 @@ impl<'a, P: messaging::Publisher, S: messaging::Subscriber> Handler<'a, P, S> {
     }
 
     #[inline]
-    fn handle_publish(&mut self,
+    fn handle_publish(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -54,7 +54,7 @@ impl<'a, P: messaging::Publisher, S: messaging::Subscriber> Handler<'a, P, S> {
     }
 
     #[inline]
-    fn handle_subscribe(&mut self,
+    fn handle_subscribe(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -76,7 +76,7 @@ impl<'a, P: messaging::Publisher, S: messaging::Subscriber> Handler<'a, P, S> {
     }
 
     #[inline]
-    fn handle_unsubscribe(&mut self,
+    fn handle_unsubscribe(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)

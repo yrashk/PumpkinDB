@@ -22,7 +22,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_uuid_v4(env, instruction, pid)
         .if_unhandled_try(|| self.handle_uuid_v5(env, instruction, pid))
         .if_unhandled_try(|| self.handle_uuid_to_string(env, instruction, pid))
@@ -37,7 +37,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_uuid_v4(&mut self,
+    pub fn handle_uuid_v4(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -51,7 +51,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_uuid_v5(&mut self,
+    pub fn handle_uuid_v5(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -76,7 +76,7 @@ impl<'a> Handler<'a> {
 
 
     #[inline]
-    pub fn handle_uuid_to_string(&mut self,
+    pub fn handle_uuid_to_string(&self,
                                  env: &mut Env<'a>,
                                  instruction: &'a [u8],
                                  _: EnvId)
@@ -97,7 +97,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_uuid_string_to(&mut self,
+    pub fn handle_uuid_string_to(&self,
                                  env: &mut Env<'a>,
                                  instruction: &'a [u8],
                                  _: EnvId)

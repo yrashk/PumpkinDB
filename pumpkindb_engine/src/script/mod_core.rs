@@ -44,7 +44,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_builtins(env, instruction, pid)
         .if_unhandled_try(|| self.handle_dowhile(env, instruction, pid))
         .if_unhandled_try(|| self.handle_times(env, instruction, pid))
@@ -73,7 +73,7 @@ impl<'a> Handler<'a> {
     handle_builtins!();
 
     #[inline]
-    fn handle_not(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_not(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, NOT);
         let a = stack_pop!(env);
 
@@ -89,7 +89,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_and(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_and(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, AND);
         let a = stack_pop!(env);
         let b = stack_pop!(env);
@@ -111,7 +111,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_or(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_or(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, OR);
         let a = stack_pop!(env);
         let b = stack_pop!(env);
@@ -133,7 +133,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_ifelse(&mut self,
+    fn handle_ifelse(&self,
                      env: &mut Env<'a>,
                      instruction: &'a [u8],
                      _: EnvId)
@@ -156,7 +156,7 @@ impl<'a> Handler<'a> {
 
     #[inline]
     #[cfg(feature = "scoped_dictionary")]
-    fn handle_eval_scoped(&mut self,
+    fn handle_eval_scoped(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -171,14 +171,14 @@ impl<'a> Handler<'a> {
 
     #[inline]
     #[cfg(not(feature = "scoped_dictionary"))]
-    fn handle_eval_scoped(&mut self, _: &Env<'a>, _: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_eval_scoped(&self, _: &Env<'a>, _: &'a [u8], _: EnvId) -> PassResult<'a> {
         Err(Error::UnknownInstruction)
     }
 
 
     #[inline]
     #[cfg(feature = "scoped_dictionary")]
-    fn handle_scope_end(&mut self,
+    fn handle_scope_end(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)
@@ -191,12 +191,12 @@ impl<'a> Handler<'a> {
 
     #[inline]
     #[cfg(not(feature = "scoped_dictionary"))]
-    fn handle_scope_end(&mut self, _: &mut Env<'a>, _: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_scope_end(&self, _: &mut Env<'a>, _: &'a [u8], _: EnvId) -> PassResult<'a> {
         Err(Error::UnknownInstruction)
     }
 
     #[inline]
-    fn handle_eval(&mut self,
+    fn handle_eval(&self,
                    env: &mut Env<'a>,
                    instruction: &'a [u8],
                    _: EnvId)
@@ -208,7 +208,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_eval_validp(&mut self,
+    fn handle_eval_validp(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -224,7 +224,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_dowhile(&mut self,
+    fn handle_dowhile(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       _: EnvId)
@@ -259,7 +259,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_times(&mut self,
+    fn handle_times(&self,
                     env: &mut Env<'a>,
                     instruction: &'a [u8],
                     _: EnvId)
@@ -278,7 +278,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_set(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_set(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, SET);
         let instruction = stack_pop!(env);
         let value = stack_pop!(env);
@@ -303,7 +303,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_def(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_def(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, DEF);
         let instruction = stack_pop!(env);
         let value = stack_pop!(env);
@@ -325,7 +325,7 @@ impl<'a> Handler<'a> {
 
     #[inline]
     #[allow(unused_variables)]
-    fn handle_featurep(&mut self,
+    fn handle_featurep(&self,
                        env: &mut Env<'a>,
                        instruction: &'a [u8],
                        _: EnvId)

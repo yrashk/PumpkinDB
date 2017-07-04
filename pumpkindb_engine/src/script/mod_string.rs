@@ -39,7 +39,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_to_uint(env, instruction, pid)
         .if_unhandled_try(|| self.handle_to_int(env, instruction, pid))
         .if_unhandled_try(|| self.handle_to_sized_num(env, instruction, pid))
@@ -53,7 +53,7 @@ impl<'a> Handler<'a> {
     }
     
     #[inline]
-    pub fn handle_to_uint(&mut self,
+    pub fn handle_to_uint(&self,
                                env: &mut Env<'a>,
                                instruction: &'a [u8],
                                _: EnvId)
@@ -70,7 +70,7 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
-    pub fn handle_to_int(&mut self,
+    pub fn handle_to_int(&self,
                           env: &mut Env<'a>,
                           instruction: &'a [u8],
                           _: EnvId)
@@ -88,7 +88,7 @@ impl<'a> Handler<'a> {
     }
     
     #[inline]
-    pub fn handle_to_sized_num(&mut self,
+    pub fn handle_to_sized_num(&self,
                                env: &mut Env<'a>,
                                instruction: &'a [u8],
                                _: EnvId)

@@ -28,7 +28,7 @@ pub struct Handler<'a> {
 builtins!("mod_binaries.builtins");
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_builtins(env, instruction, pid)
         .if_unhandled_try(|| self.handle_ltp(env, instruction, pid))
         .if_unhandled_try(|| self.handle_gtp(env, instruction, pid))
@@ -49,7 +49,7 @@ impl<'a> Handler<'a> {
     handle_builtins!();
 
     #[inline]
-    fn handle_equal(&mut self,
+    fn handle_equal(&self,
                     env: &mut Env<'a>,
                     instruction: &'a [u8],
                     _: EnvId)
@@ -68,7 +68,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_ltp(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_ltp(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, LTQ);
         let a = stack_pop!(env);
         let b = stack_pop!(env);
@@ -83,7 +83,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_gtp(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_gtp(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, GTQ);
         let a = stack_pop!(env);
         let b = stack_pop!(env);
@@ -98,7 +98,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_concat(&mut self,
+    fn handle_concat(&self,
                      env: &mut Env<'a>,
                      instruction: &'a [u8],
                      _: EnvId)
@@ -118,7 +118,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_slice(&mut self,
+    fn handle_slice(&self,
                     env: &mut Env<'a>,
                     instruction: &'a [u8],
                     _: EnvId)
@@ -150,7 +150,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_pad(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_pad(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, PAD);
         let byte = stack_pop!(env);
         let size = stack_pop!(env);
@@ -183,7 +183,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    fn handle_length(&mut self,
+    fn handle_length(&self,
                      env: &mut Env<'a>,
                      instruction: &'a [u8],
                      _: EnvId)

@@ -31,7 +31,7 @@ pub struct Handler<'a, N> where N : NonVolatileMemory {
 }
 
 impl<'a, N> Dispatcher<'a> for Handler<'a, N> where N : NonVolatileMemory {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_hlc(env, instruction, pid)
         .if_unhandled_try(|| self.handle_hlc_lc(env, instruction, pid))
         .if_unhandled_try(|| self.handle_hlc_tick(env, instruction, pid))
@@ -59,7 +59,7 @@ impl<'a, N> Handler<'a, N> where N : NonVolatileMemory {
     }
 
     #[inline]
-    pub fn handle_hlc_tick(&mut self,
+    pub fn handle_hlc_tick(&self,
                            env: &mut Env<'a>,
                            instruction: &'a [u8],
                            _: EnvId)
@@ -91,7 +91,7 @@ impl<'a, N> Handler<'a, N> where N : NonVolatileMemory {
     }
 
     #[inline]
-    pub fn handle_hlc_lc(&mut self,
+    pub fn handle_hlc_lc(&self,
                          env: &mut Env<'a>,
                          instruction: &'a [u8],
                          _: EnvId)
@@ -122,7 +122,7 @@ impl<'a, N> Handler<'a, N> where N : NonVolatileMemory {
     }
 
     #[inline]
-    pub fn handle_hlc_observe(&mut self,
+    pub fn handle_hlc_observe(&self,
                               env: &mut Env<'a>,
                               instruction: &'a [u8],
                               _: EnvId)

@@ -33,7 +33,7 @@ macro_rules! builtins {
 macro_rules! handle_builtins {
     () => {
         #[inline]
-        fn handle_builtins(&mut self,
+        fn handle_builtins(&self,
                            env: &mut Env<'a>,
                            instruction: &'a [u8],
                            _: EnvId)

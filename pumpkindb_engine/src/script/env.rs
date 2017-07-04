@@ -32,6 +32,11 @@ pub struct Env<'a> {
     pub tracking_errors: usize,
     pub aborting_try: Vec<Error>,
     published_message_callback: Option<Box<messaging::PublishedMessageCallback + Send>>,
+    // FIXME:
+    // until type_id drops 'static requirement we can't use AnyMap to
+    // store handlers' effects, so we'll hardcode them for now
+    // See https://github.com/rust-lang/rust/issues/41875
+    pub txns: super::mod_storage::Transactions<'a>,
 }
 
 impl<'a> ::std::fmt::Debug for Env<'a> {
@@ -76,6 +81,7 @@ impl<'a> Env<'a> {
             tracking_errors: 0,
             aborting_try: Vec::new(),
             published_message_callback: None,
+            txns: super::mod_storage::Transactions::new(),
         })
     }
 

@@ -336,7 +336,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
     ///
     /// Once an environment execution has been terminated, a message will be sent,
     /// depending on the result (`EnvTerminated` or `EnvFailed`)
-    pub fn run(&mut self) {
+    pub fn run(&self) {
         let mut rng = thread_rng();
         let mut envs: VecDeque<(EnvId, Env<'a>, Sender<ResponseMessage>)> = VecDeque::new();
         // Flag that indicates that the Env being processed should be removed from
@@ -433,7 +433,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
     }
 
     #[allow(unused_mut)]
-    fn pass(&mut self, env: &mut Env<'a>, pid: EnvId) -> PassResult<'a> {
+    fn pass(&self, env: &mut Env<'a>, pid: EnvId) -> PassResult<'a> {
         if env.program.len() == 0 {
             return Ok(());
         }
@@ -473,7 +473,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
 
     #[inline]
     #[cfg(not(feature = "scoped_dictionary"))]
-    fn handle_dictionary(&mut self,
+    fn handle_dictionary(&self,
                          env: &mut Env<'a>,
                          instruction: &'a [u8],
                          _: EnvId)
@@ -491,7 +491,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
 
     #[inline]
     #[cfg(feature = "scoped_dictionary")]
-    fn handle_dictionary(&mut self,
+    fn handle_dictionary(&self,
                          env: &mut Env<'a>,
                          instruction: &'a [u8],
                          _: EnvId)
@@ -515,7 +515,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
     }
 
     #[inline]
-    fn handle_try(&mut self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
+    fn handle_try(&self, env: &mut Env<'a>, instruction: &'a [u8], _: EnvId) -> PassResult<'a> {
         return_unless_instructions_equal!(instruction, TRY);
         let v = stack_pop!(env);
         env.tracking_errors += 1;
@@ -525,7 +525,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
     }
 
     #[inline]
-    fn handle_try_end(&mut self,
+    fn handle_try_end(&self,
                       env: &mut Env<'a>,
                       instruction: &'a [u8],
                       pid: EnvId)
@@ -548,7 +548,7 @@ impl<'a, T: Dispatcher<'a>> Scheduler<'a, T> {
 }
 
 impl<'a, T: Dispatcher<'a>> Dispatcher<'a> for Scheduler<'a, T> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_try(env, instruction, pid)
             .if_unhandled_try(|| self.handle_try_end(env, instruction, pid))
             .if_unhandled_try(|| self.dispatcher.handle(env, instruction, pid))

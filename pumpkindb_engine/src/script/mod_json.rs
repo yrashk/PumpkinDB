@@ -62,7 +62,7 @@ macro_rules! json_is_a {
 builtins!("mod_json.builtins");
 
 impl<'a> Dispatcher<'a> for Handler<'a> {
-    fn handle(&mut self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
+    fn handle(&self, env: &mut Env<'a>, instruction: &'a [u8], pid: EnvId) -> PassResult<'a> {
         self.handle_builtins(env, instruction, pid)
         .if_unhandled_try(|| self.handle_jsonq(env, instruction, pid))
         .if_unhandled_try(|| self.handle_json_objectq(env, instruction, pid))
@@ -88,7 +88,7 @@ impl<'a> Handler<'a> {
     handle_builtins!();
 
     #[inline]
-    pub fn handle_jsonq(&mut self,
+    pub fn handle_jsonq(&self,
                         env: &mut Env<'a>,
                         instruction: &'a [u8],
                         _: EnvId)
@@ -105,7 +105,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_objectq(&mut self,
+    pub fn handle_json_objectq(&self,
                                env: &mut Env<'a>,
                                instruction: &'a [u8],
                                _: EnvId)
@@ -114,7 +114,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_stringq(&mut self,
+    pub fn handle_json_stringq(&self,
                                env: &mut Env<'a>,
                                instruction: &'a [u8],
                                _: EnvId)
@@ -122,7 +122,7 @@ impl<'a> Handler<'a> {
         json_is_a!(env, instruction, JSON_STRINGQ, String)
     }
     #[inline]
-    pub fn handle_json_numberq(&mut self,
+    pub fn handle_json_numberq(&self,
                                env: &mut Env<'a>,
                                instruction: &'a [u8],
                                _: EnvId)
@@ -131,7 +131,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_booleanq(&mut self,
+    pub fn handle_json_booleanq(&self,
                                 env: &mut Env<'a>,
                                 instruction: &'a [u8],
                                 _: EnvId)
@@ -140,7 +140,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_arrayq(&mut self,
+    pub fn handle_json_arrayq(&self,
                               env: &mut Env<'a>,
                               instruction: &'a [u8],
                               _: EnvId)
@@ -149,7 +149,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_nullq(&mut self,
+    pub fn handle_json_nullq(&self,
                              env: &mut Env<'a>,
                              instruction: &'a [u8],
                              _: EnvId)
@@ -160,7 +160,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_get(&mut self,
+    pub fn handle_json_get(&self,
                            env: &mut Env<'a>,
                            instruction: &'a [u8],
                            _: EnvId)
@@ -194,7 +194,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_hasq(&mut self,
+    pub fn handle_json_hasq(&self,
                             env: &mut Env<'a>,
                             instruction: &'a [u8],
                             _: EnvId)
@@ -225,7 +225,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_set(&mut self,
+    pub fn handle_json_set(&self,
                            env: &mut Env<'a>,
                            instruction: &'a [u8],
                            _: EnvId)
@@ -261,7 +261,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_string_to(&mut self,
+    pub fn handle_json_string_to(&self,
                                  env: &mut Env<'a>,
                                  instruction: &'a [u8],
                                  _: EnvId)
@@ -283,7 +283,7 @@ impl<'a> Handler<'a> {
     }
 
     #[inline]
-    pub fn handle_json_to_string(&mut self,
+    pub fn handle_json_to_string(&self,
                                  env: &mut Env<'a>,
                                  instruction: &'a [u8],
                                  _: EnvId)
