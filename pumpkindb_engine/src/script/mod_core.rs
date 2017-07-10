@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use pumpkinscript::{parse_bin, binparser};
+use pumpkinscript::{parse_bin, binparser, parse, parse_with_config, ParseConfigBuilder};
 
 use super::{Env, EnvId, Dispatcher, PassResult, Error, ERROR_EMPTY_STACK, ERROR_INVALID_VALUE,
             offset_by_size, STACK_TRUE, STACK_FALSE, TryInstruction};
@@ -39,6 +39,9 @@ instruction!(OR, (a, b => c), b"\x82OR");
 // Category: experimental features
 instruction!(FEATUREQ, (a => b), b"\x88FEATURE?");
 
+instruction!(PARSE, (a => b), b"\x85PARSE");
+instruction!(PARSE_TYPED, (a => b), b"\x8BPARSE-TYPED");
+
 builtins!("mod_core.psc");
 
 pub struct Handler<'a> {
@@ -61,6 +64,8 @@ impl<'a> Dispatcher<'a> for Handler<'a> {
         .if_unhandled_try(|| self.handle_or(env, instruction, pid))
         .if_unhandled_try(|| self.handle_ifelse(env, instruction, pid))
         .if_unhandled_try(|| self.handle_featurep(env, instruction, pid))
+        .if_unhandled_try(|| self.handle_parse(env, instruction, pid))
+        .if_unhandled_try(|| self.handle_parse_typed(env, instruction, pid))
         .if_unhandled_try(|| Err(Error::UnknownInstruction))
     }
 }
@@ -357,6 +362,57 @@ impl<'a> Handler<'a> {
 
         Ok(())
     }
+
+    #[inline]
+    #[allow(unused_variables)]
+    fn handle_parse(&mut self,
+                      env: &mut Env<'a>,
+                      instruction: &'a [u8],
+                      _: EnvId)
+                      -> PassResult<'a> {
+        return_unless_instructions_equal!(instruction, PARSE);
+        let string = stack_pop!(env);
+
+        match ::std::str::from_utf8(string) {
+            Err(_) => Err(error_invalid_value!(instruction)),
+            Ok(s) => {
+                match parse(s) {
+                    Err(_) => Err(error_invalid_value!(instruction)),
+                    Ok(result) => {
+                        let slice = alloc_and_write!(&result, env);
+                        env.push(slice);
+                        Ok(())
+                    }
+                }
+            },
+        }
+    }
+
+    #[inline]
+    #[allow(unused_variables)]
+    fn handle_parse_typed(&mut self,
+                      env: &mut Env<'a>,
+                      instruction: &'a [u8],
+                      _: EnvId)
+                      -> PassResult<'a> {
+        return_unless_instructions_equal!(instruction, PARSE_TYPED);
+        let string = stack_pop!(env);
+
+        match ::std::str::from_utf8(string) {
+            Err(_) => Err(error_invalid_value!(instruction)),
+            Ok(s) => {
+                match parse_with_config(s, ParseConfigBuilder::default().type_literals(true).build().unwrap()) {
+                    Err(_) => Err(error_invalid_value!(instruction)),
+                    Ok(result) => {
+                        let slice = alloc_and_write!(&result, env);
+                        env.push(slice);
+                        Ok(())
+                    }
+                }
+            },
+        }
+    }
+
 }
 
 #[cfg(test)]

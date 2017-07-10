@@ -10,7 +10,7 @@ macro_rules! builtins {
     lazy_static! {
       static ref BUILTIN_FILE: &'static [u8] = include_bytes!($file);
 
-      static ref BUILTIN_DEFS: Vec<Vec<u8>> = ::pumpkinscript::textparser::programs(*BUILTIN_FILE).unwrap().1;
+      static ref BUILTIN_DEFS: Vec<Vec<u8>> = ::pumpkinscript::textparser::programs($crate::pumpkinscript::Configured::new(Default::default(), *BUILTIN_FILE)).unwrap().1;
 
       static ref BUILTINS: ::std::collections::BTreeMap<&'static [u8], &'static [u8]> = {
           let mut map = ::std::collections::BTreeMap::new();

@@ -102,7 +102,7 @@ fn main() {
                 let mut s = String::new();
                 f.read_to_string(&mut s).expect("can't read file");
                 for cap in re.captures_iter(&s) {
-                    let programs = textparser::programs(cap[1].as_ref()).unwrap().1;
+                    let programs = textparser::programs(pumpkinscript::Configured::new(Default::default(), cap[1].as_ref())).unwrap().1;
                     if programs.len() == 0 {
                         println!(" WARNING: no tests defined in {}", path.to_str().unwrap());
                     }

@@ -114,7 +114,7 @@ impl<T : Encodable> Encodable for Closure<T> {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Receivable {
     Data(Vec<u8>),
     Instruction(String)
@@ -130,19 +130,28 @@ impl Encodable for Receivable {
     }
 }
 
+impl AsRef<[u8]> for Receivable {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            &Receivable::Data(ref data) => data.as_ref(),
+            &Receivable::Instruction(ref instruction) => instruction.as_ref(),
+        }
+    }
+}
+
 use std::convert::TryFrom;
 use byteorder::{ReadBytesExt, BigEndian};
 use std::io::{Cursor, Read};
 
-impl<'a> TryFrom<&'a mut Cursor<Vec<u8>>> for Receivable {
+impl<'a, T> TryFrom<&'a mut Cursor<T>> for Receivable where T : AsRef<[u8]> {
 
     type Error = ();
 
-    fn try_from(cursor: &'a mut Cursor<Vec<u8>>) -> Result<Self, Self::Error> {
-        if cursor.position() as usize == cursor.get_ref().len() {
+    fn try_from(cursor: &'a mut Cursor<T>) -> Result<Self, Self::Error> {
+        if cursor.position() as usize == cursor.get_ref().as_ref().len() {
             return Err(())
         }
-        if cursor.get_ref()[cursor.position() as usize] & 0x80 == 0x80 {
+        if cursor.get_ref().as_ref()[cursor.position() as usize] & 0x80 == 0x80 {
             let len = (cursor.read_u8().unwrap() ^ 0x80) as usize;
             let mut vec = vec![0; len];
             let _ = cursor.read_exact(&mut vec).expect("can't read instruction");

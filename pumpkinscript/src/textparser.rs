@@ -10,10 +10,35 @@ use nom::{is_hex_digit, multispace, is_digit};
 
 use num_bigint::{BigUint, Sign};
 use num_traits::Zero;
+pub use nom_config::Configured;
 use core::str::FromStr;
 use std::str;
 
 use super::{Program, Packable, ParseError};
+
+#[derive(Debug, Clone, Copy, Builder)]
+#[builder(setter(into),field(public))]
+/// Parsing configuration
+pub struct Config {
+    /// For all literal types (besides binaries: `0x...`), add type casting information
+    /// For example, `1` will in fact become `1 "UINT" AS`, `"hello"` will become
+    /// `"hello" "STRING" AS`
+    ///
+    /// This information is useful during type checking and, if sent to the engine,
+    /// can be used to enforce types in runtime, where possible.
+    pub type_literals: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            // Don't type literals by default because it is only useful
+            // for type checking. Might incur a performance penalty in
+            // the interpreter.
+            type_literals: false,
+        }
+    }
+}
 
 fn prefix_instruction(instruction: &[u8]) -> Vec<u8> {
     let mut vec = Vec::new();
@@ -91,6 +116,14 @@ fn sized_vec(s: Vec<u8>) -> Vec<u8> {
     vec
 }
 
+fn typed(config: &Config, t: &'static [u8], mut v: Vec<u8>) -> Vec<u8> {
+    if config.type_literals {
+        v.extend_from_slice(t);
+        v.extend_from_slice(b"\x82AS");
+    }
+    v
+}
+
 fn is_instruction_char(s: u8) -> bool {
     (s >= b'a' && s <= b'z') || (s >= b'A' && s <= b'Z') ||
     (s >= b'0' && s <= b'9') || s == b'_' || s == b':' || s == b'-' || s == b'=' ||
@@ -133,7 +166,7 @@ named!(sign_ch<char>,
                ({
                    sign_ch[0] as char
                })));
-           
+
 
 named!(sign<Sign>,
     do_parse!(
@@ -146,14 +179,14 @@ named!(sign<Sign>,
             }
         })));
 
-named!(int_str<String>,
+named!(int_str<&[u8], String>,
        do_parse!(
            sign_opt: opt!(sign_ch)              >>
                num_part: take_while1!(is_digit) >>
                ({
                    let sign_str = if let Some(sign) = sign_opt { sign.to_string() } else { "".to_owned() };
                    (sign_str + str::from_utf8(num_part).unwrap())})));
-           
+
 
 
 named!(biguint<BigUint>,
@@ -162,102 +195,111 @@ named!(biguint<BigUint>,
         delim_or_end                    >>
         (BigUint::from_str(str::from_utf8(biguint).unwrap()).unwrap())));
 
-named!(u8int<Vec<u8>>,
+named_with_config!(Config, u8int<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| u8::from_str(&s)) >>
-        tag!("u8")                  >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| u8::from_str(&s))) >>
+        lift_config!(tag!("u8"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut u8i = vec![];
             u8i.write_u8(n).unwrap();
-            u8i
+            typed(&cfg, b"\x05UINT8", sized_vec(u8i))
         })));
 
-named!(u16int<Vec<u8>>,
+named_with_config!(Config, u16int<Vec<u8>>,
      do_parse!(
-        n: map_res!(int_str, |s: String| u16::from_str(&s)) >>
-        tag!("u16")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| u16::from_str(&s))) >>
+        lift_config!(tag!("u16"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut u16i = vec![];
             u16i.write_u16::<BigEndian>(n).unwrap();
-            u16i
+            typed(&cfg, b"\x06UINT16", sized_vec(u16i))
         })));
 
-named!(u32int<Vec<u8>>,
+named_with_config!(Config, u32int<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| u32::from_str(&s)) >>
-        tag!("u32")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| u32::from_str(&s))) >>
+        lift_config!(tag!("u32"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut u32i = vec![];
             u32i.write_u32::<BigEndian>(n).unwrap();
-            u32i
+            typed(&cfg, b"\x06UINT32", sized_vec(u32i))
         })));
 
-named!(u64int<Vec<u8>>,
+named_with_config!(Config, u64int<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| u64::from_str(&s)) >>
-        tag!("u64")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| u64::from_str(&s))) >>
+        lift_config!(tag!("u64"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut u64i = vec![];
             u64i.write_u64::<BigEndian>(n).unwrap();
-            u64i
+            typed(&cfg, b"\x06UINT64", sized_vec(u64i))
         })));
 
-named!(int8<Vec<u8>>,
+named_with_config!(Config, int8<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| i8::from_str(&s)) >>
-        tag!("i8")                  >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| i8::from_str(&s))) >>
+        lift_config!(tag!("i8"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut i8 = vec![];
             i8.write_i8(n).unwrap();
             i8[0] ^= 1u8 << 7;
-            i8
+            typed(&cfg, b"\x04INT8", sized_vec(i8))
         })));
 
-named!(int16<Vec<u8>>,
+named_with_config!(Config, int16<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| i16::from_str(&s)) >>
-        tag!("i16")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| i16::from_str(&s))) >>
+        lift_config!(tag!("i16"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut i16 = vec![];
             i16.write_i16::<BigEndian>(n).unwrap();
             i16[0] ^= 1u8 << 7;
-            i16
+            typed(&cfg, b"\x05INT16", sized_vec(i16))
         })));
 
-named!(int32<Vec<u8>>,
+named_with_config!(Config, int32<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| i32::from_str(&s)) >>
-        tag!("i32")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| i32::from_str(&s))) >>
+        lift_config!(tag!("i32"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut i32 = vec![];
             i32.write_i32::<BigEndian>(n).unwrap();
             i32[0] ^= 1u8 << 7;
-            i32
+            typed(&cfg, b"\x05INT32", sized_vec(i32))
         })));
 
-named!(int64<Vec<u8>>,
+named_with_config!(Config, int64<Vec<u8>>,
     do_parse!(
-        n: map_res!(int_str, |s: String| i64::from_str(&s)) >>
-        tag!("i64")                 >>
-        delim_or_end                >>
+        cfg: config!() >>
+        n: lift_config!(map_res!(int_str, |s: String| i64::from_str(&s))) >>
+        lift_config!(tag!("i64"))                  >>
+        lift_config!(delim_or_end) >>
         ({
             let mut i64 = vec![];
             i64.write_i64::<BigEndian>(n).unwrap();
             i64[0] ^= 1u8 << 7;
-            i64
+            typed(&cfg, b"\x05INT64", sized_vec(i64))
         })));
 
-named!(sint<Vec<u8>>,
+named_with_config!(Config, sint<Vec<u8>>,
     do_parse!(
-        sign: sign        >>
-        biguint: biguint  >>
+        cfg: config!() >>
+        sign: lift_config!(sign) >>
+        biguint: lift_config!(biguint) >>
         ({
             let mut bytes = if sign == Sign::Minus && !biguint.is_zero() {
                 vec![0x00]
@@ -289,27 +331,29 @@ named!(sint<Vec<u8>>,
            }
            //compv[0] ^= 1u8 << 7;
            bytes.extend_from_slice(&compv);
-           (sized_vec(bytes))
+           (typed(&cfg, b"\x03INT", sized_vec(bytes)))
         })));
 
-named!(uint<Vec<u8>>,
+named_with_config!(Config, uint<Vec<u8>>,
     do_parse!(
-        biguint: biguint >>
-        (sized_vec(biguint.to_bytes_be()))));
+        cfg: config!() >>
+        biguint: lift_config!(biguint) >>
+        (typed(&cfg, b"\x04UINT", sized_vec(biguint.to_bytes_be())))));
 
-named!(int_sized<Vec<u8>>,
+named_with_config!(Config, int_sized<Vec<u8>>,
     do_parse!(
         int: alt!(u8int | int8 | u16int | int16 | u32int | int32 | u64int | int64 ) >>
-            (sized_vec(int))));
+            (int)));
 
-named!(float32<Vec<u8>>,
+named_with_config!(Config, float32<Vec<u8>>,
        do_parse!(
-           sign: opt!(sign_ch)           >>
-           left: take_while1!(is_digit)  >>
-           char!('.')                    >>
-           right: take_while1!(is_digit) >>
-           tag!("f32")                   >>
-           delim_or_end                  >>
+           cfg: config!() >>
+           sign: lift_config!(opt!(sign_ch))           >>
+           left: lift_config!(take_while1!(is_digit))  >>
+           lift_config!(char!('.'))                    >>
+           right: lift_config!(take_while1!(is_digit)) >>
+           lift_config!(tag!("f32"))                   >>
+           lift_config!(delim_or_end)                 >>
                ({
                    let mut bytes = vec![];
                    if let Some('-') = sign {
@@ -321,61 +365,72 @@ named!(float32<Vec<u8>>,
                    let mut val = str::from_utf8(&bytes).unwrap().parse::<f32>().unwrap();
                    // a little tricky: +0.0f32 == -0.0f32, but they don't serialize
                    // to the same bytes. negative sign in the comparison left to indicate
-                   // intent, but technically unnecessary  
+                   // intent, but technically unnecessary
                    if val == -0.0f32 {
                        val = 0.0f32;
                    }
-                   (sized_vec(val.pack()))
+                   typed(&cfg, b"\x03F32", sized_vec(val.pack()))
                })));
 
-named!(float64<Vec<u8>>,
+named_with_config!(Config, float64<Vec<u8>>,
        do_parse!(
-           sign: opt!(sign_ch)           >>
-               left: take_while1!(is_digit)  >>
-               char!('.')                    >>
-               right: take_while1!(is_digit) >>
-               tag!("f64")                   >>
-               delim_or_end                  >>
-               ({
-                   let mut bytes = vec![];
-                   if let Some('-') = sign {
-                       bytes.extend_from_slice(b"-");
-                   }
-                   bytes.extend_from_slice(left);
-                   bytes.extend_from_slice(b".");
-                   bytes.extend_from_slice(right);
-                   let mut val = str::from_utf8(&bytes).unwrap().parse::<f64>().unwrap();
-                   // see note on float32
-                   if val == -0.0f64 {
-                       val = 0.0f64;
-                   }
-                   (sized_vec(val.pack()))
-               })));
+           cfg: config!() >>
+           sign: lift_config!(opt!(sign_ch))           >>
+           left: lift_config!(take_while1!(is_digit))  >>
+           lift_config!(char!('.'))                    >>
+           right: lift_config!(take_while1!(is_digit)) >>
+           lift_config!(tag!("f64"))                   >>
+           lift_config!(delim_or_end)                 >>
+           ({
+               let mut bytes = vec![];
+               if let Some('-') = sign {
+                   bytes.extend_from_slice(b"-");
+               }
+               bytes.extend_from_slice(left);
+               bytes.extend_from_slice(b".");
+               bytes.extend_from_slice(right);
+               let mut val = str::from_utf8(&bytes).unwrap().parse::<f64>().unwrap();
+               // see note on float32
+               if val == -0.0f64 {
+                   val = 0.0f64;
+               }
+               typed(&cfg, b"\x03F64", sized_vec(val.pack()))
+           })));
 
-    
+
 named!(instruction<Vec<u8>>, do_parse!(
                         instruction: take_while1!(is_instruction_char)  >>
                               (prefix_instruction(instruction))));
-named!(instructionref<Vec<u8>>, do_parse!(tag!(b"'") >> w: instruction >> (sized_vec(w))));
+named_with_config!(Config, instructionref<Vec<u8>>,
+                  do_parse!(
+                      cfg: config!() >>
+                      lift_config!(tag!(b"'")) >>
+                      w: lift_config!(instruction) >>
+                      (typed(&cfg, b"\x07CLOSURE", sized_vec(w)))));
 named!(binary<Vec<u8>>, do_parse!(
                               tag!(b"0x")                 >>
                          hex: take_while1!(is_hex_digit)  >>
                               (bin(hex))
 ));
-named!(string<Vec<u8>>,  alt!(do_parse!(tag!(b"\"\"") >> (vec![0])) |
+named_with_config!(Config, string<Vec<u8>>,
+                         alt!(do_parse!(
+                           cfg: config!() >>
+                           lift_config!(tag!(b"\"\"")) >> (typed(&cfg, b"\x06STRING", vec![0]))) |
                          do_parse!(
-                         str: delimited!(char!('"'),
+                           cfg: config!() >>
+                           str: lift_config!(delimited!(char!('"'),
                                          escaped!(is_not!("\"\\"), '\\', one_of!("\"n\\")),
-                                         char!('"')) >>
-                              (string_to_vec(str)))));
+                                         char!('"'))) >>
+                           (typed(&cfg, b"\x06STRING", string_to_vec(str))))));
 named!(comment_, do_parse!(
                                char!('(')                            >>
                                many0!(alt!(is_not!("()") | comment_ | is_not!(")"))) >>
                                char!(')')                            >>
                                (&[])));
 named!(comment<Vec<u8>>, do_parse!(comment_ >> (vec![])));
-named!(item<Vec<u8>>, alt!(comment | uint | binary | string | sint | int_sized | float32 |
-                           float64 | wrap | instructionref | instruction));
+named_with_config!(Config, item<Vec<u8>>,
+                       alt!(lift_config!(comment) | uint | lift_config!(binary) | string | sint | int_sized | float32 |
+                            float64 | wrap | instructionref | lift_config!(instruction)));
 
 fn unwrap_instruction(mut instruction: Vec<u8>) -> Vec<u8> {
     let mut vec = Vec::new();
@@ -384,7 +439,7 @@ fn unwrap_instruction(mut instruction: Vec<u8>) -> Vec<u8> {
     vec
 }
 
-fn rewrap(prog: Vec<u8>) -> Vec<u8> {
+fn rewrap(cfg: &Config, prog: Vec<u8>) -> Vec<u8> {
     let mut program = &prog[..];
     let mut vec = Vec::new();
     let mut acc = Vec::new();
@@ -421,7 +476,8 @@ fn rewrap(prog: Vec<u8>) -> Vec<u8> {
     for _ in 0..counter - 1 {
         vec.append(&mut prefix_instruction(b"CONCAT"));
     }
-    if counter == 0 { sized_vec(vec) } else { vec }
+    let res = if counter == 0 { sized_vec(vec) } else { vec };
+    typed(cfg, b"\x07CLOSURE", res)
 }
 
 use super::binparser::instruction_tag;
@@ -436,14 +492,15 @@ named!(unwrap<Vec<u8>>, do_parse!(
                               tag!(b"`")                 >>
                         instruction: alt!(instruction | unwrap)        >>
                               (unwrap_instruction(instruction))));
-named!(wrap<Vec<u8>>, do_parse!(
-                         prog: delimited!(char!('['), ws!(wrapped_program), char!(']')) >>
-                               (rewrap(prog))));
-named!(wrapped_item<Vec<u8>>, alt!(item | unwrap));
-named!(wrapped_program<Vec<u8>>, alt!(do_parse!(
+named_with_config!(Config, wrap<Vec<u8>>, do_parse!(
+                         cfg: config!() >>
+                         prog: delimited!(lift_config!(char!('[')), ws!(wrapped_program), lift_config!(char!(']'))) >>
+                               (rewrap(cfg, prog))));
+named_with_config!(Config, wrapped_item<Vec<u8>>, alt!(item | lift_config!(unwrap)));
+named_with_config!(Config, wrapped_program<Vec<u8>>, alt!(lift_config!(do_parse!(
                                take_while!(is_multispace)                        >>
                             v: eof                                               >>
-                               (v))
+                               (v)))
                               | do_parse!(
                                take_while!(is_multispace)                        >>
                          item: separated_list!(complete!(multispace),
@@ -451,19 +508,19 @@ named!(wrapped_program<Vec<u8>>, alt!(do_parse!(
                                take_while!(is_multispace)                        >>
                                (flatten_program(item)))));
 
-named!(program<Vec<u8>>, alt!(do_parse!(
+named_with_config!(Config, program<Vec<u8>>, alt!(lift_config!(do_parse!(
                                take_while!(is_multispace)                        >>
                             v: eof                                               >>
-                               (v))
+                               (v)))
                               | do_parse!(
-                               take_while!(is_multispace)                        >>
+                               take_while!(is_multispace)          >>
                          item: separated_list!(complete!(multispace),
                                                  complete!(item))                >>
-                               take_while!(is_multispace)                        >>
+                               take_while!(is_multispace)          >>
                                (flatten_program(item)))));
 
-named!(pub programs<Vec<Vec<u8>>>, do_parse!(
-                         item: separated_list!(complete!(tag!(b".")), program)   >>
+named_with_config!(Config, pub programs<Vec<Vec<u8>>>, do_parse!(
+                         item: separated_list!(lift_config!(complete!(tag!(b"."))), program)   >>
                                (item)));
 
 
@@ -505,9 +562,10 @@ named!(pub programs<Vec<Vec<u8>>>, do_parse!(
 ///
 /// It's especially useful for testing but there is a chance that there will be
 /// a "suboptimal" protocol that allows to converse with PumpkinDB over telnet
-pub fn parse(script: &str) -> Result<Program, ParseError> {
-    match program(script.as_bytes()) {
-        IResult::Done(rest, x) => {
+pub fn parse_with_config(script: &str, config: Config) -> Result<Program, ParseError> {
+    match program(Configured::new(config, script.as_bytes())) {
+        IResult::Done(configured, x) => {
+            let (_, rest) = configured.into();
             if rest.len() == 0 {
                 Ok(x)
             } else {
@@ -520,9 +578,13 @@ pub fn parse(script: &str) -> Result<Program, ParseError> {
     }
 }
 
+pub fn parse(script: &str) -> Result<Program, ParseError> {
+    parse_with_config(script, Default::default())
+}
+
 #[cfg(test)]
 mod tests {
-    use textparser::{parse, programs};
+    use textparser::{parse, parse_with_config, programs, ConfigBuilder, Configured};
     use num_bigint::BigUint;
     use core::str::FromStr;
 
@@ -756,7 +818,7 @@ mod tests {
     #[test]
     fn test_programs() {
         let str = "SOMETHING : BURP DURP.\nBURP : DURP";
-        let (_, mut progs) = programs(str.as_bytes()).unwrap();
+        let (_, mut progs) = programs(Configured::new(Default::default(), str.as_bytes())).unwrap();
         assert_eq!(Vec::from(progs.pop().unwrap()), parse("BURP : DURP").unwrap());
         assert_eq!(Vec::from(progs.pop().unwrap()), parse("SOMETHING : BURP DURP").unwrap());
     }
@@ -787,6 +849,26 @@ mod tests {
         assert_eq!(parse("+0").unwrap(), vec![2, 1, 0]);
         assert_eq!(parse("+1").unwrap(), vec![2, 1, 1]);
         assert_eq!(parse("-1").unwrap(), vec![2, 0, 255]);
+    }
+
+    #[test]
+    fn test_typing() {
+        let config = ConfigBuilder::default().type_literals(true).build().unwrap();
+        assert_eq!(parse_with_config("0", config).unwrap(), parse("0 \"UINT\" AS").unwrap());
+        assert_eq!(parse_with_config("+1", config).unwrap(), parse("+1 \"INT\" AS").unwrap());
+        assert_eq!(parse_with_config("0u8", config).unwrap(), parse("0u8 \"UINT8\" AS").unwrap());
+        assert_eq!(parse_with_config("0u16", config).unwrap(), parse("0u16 \"UINT16\" AS").unwrap());
+        assert_eq!(parse_with_config("0u32", config).unwrap(), parse("0u32 \"UINT32\" AS").unwrap());
+        assert_eq!(parse_with_config("0u64", config).unwrap(), parse("0u64 \"UINT64\" AS").unwrap());
+        assert_eq!(parse_with_config("-1i8", config).unwrap(), parse("-1i8 \"INT8\" AS").unwrap());
+        assert_eq!(parse_with_config("-1i16", config).unwrap(), parse("-1i16 \"INT16\" AS").unwrap());
+        assert_eq!(parse_with_config("-1i32", config).unwrap(), parse("-1i32 \"INT32\" AS").unwrap());
+        assert_eq!(parse_with_config("-1i64", config).unwrap(), parse("-1i64 \"INT64\" AS").unwrap());
+        assert_eq!(parse_with_config("0.0f32", config).unwrap(), parse("0.0f32 \"F32\" AS").unwrap());
+        assert_eq!(parse_with_config("0.0f64", config).unwrap(), parse("0.0f64 \"F64\" AS").unwrap());
+        assert_eq!(parse_with_config("\"string\"", config).unwrap(), parse("\"string\" \"STRING\" AS").unwrap());
+        assert_eq!(parse_with_config("[]", config).unwrap(), parse("[] \"CLOSURE\" AS").unwrap());
+        assert_eq!(parse_with_config("'TEST", config).unwrap(), parse("'TEST \"CLOSURE\" AS").unwrap());
     }
 
 }

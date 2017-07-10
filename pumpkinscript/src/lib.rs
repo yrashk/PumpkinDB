@@ -65,6 +65,11 @@ extern crate num_bigint;
 extern crate num_traits;
 extern crate byteorder;
 
+#[macro_use]
+extern crate nom_config;
+
+#[macro_use]
+extern crate derive_builder;
 
 #[macro_use]
 pub mod macros;
@@ -74,7 +79,9 @@ pub use self::binparser::parse as parse_bin;
 
 
 pub mod textparser;
-pub use self::textparser::parse;
+pub use self::textparser::{parse, parse_with_config, Config as ParseConfig, ConfigBuilder as ParseConfigBuilder};
+
+pub use nom_config::Configured;
 
 mod packable;
 pub use packable::{Packable, Unpackable};
@@ -82,6 +89,8 @@ pub use packable::{Packable, Unpackable};
 pub mod encodables;
 
 pub use self::encodables::{Encodable, Instruction, InstructionRef, Closure, Receivable};
+
+pub mod typed;
 
 use std::fmt;
 

@@ -48,7 +48,7 @@ extern crate log;
 extern crate memmap;
 
 #[macro_use]
-extern crate pumpkinscript;
+pub extern crate pumpkinscript;
 
 extern crate uuid;
 
